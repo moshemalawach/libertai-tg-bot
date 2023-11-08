@@ -274,15 +274,17 @@ def should_answer(messages, active_prompt, model):
     if not basic_answer_checks(messages, active_prompt):
         return False
     
-    prompt = prepare_prompt(messages, active_prompt, model, add_persona=False)
-    prompt = f"{prompt}{model['user_prepend']}"
+    return True
+    
+    # prompt = prepare_prompt(messages, active_prompt, model, add_persona=False)
+    # prompt = f"{prompt}{model['user_prepend']}"
 
-    stopped, answer = complete(prompt, model, ["YES", "NO"])
-    print(answer)
-    if answer.startswith(active_prompt['persona_name']) and not answer.strip().strip('"').endswith("NULL"):
-        return True
-    else:
-        return False
+    # stopped, answer = complete(prompt, model, ["YES", "NO"])
+    # print(answer)
+    # if answer.startswith(active_prompt['persona_name']) and not answer.strip().strip('"').endswith("NULL"):
+    #     return True
+    # else:
+    #     return False
 
 
 @bot.message_handler(content_types=['text'])
