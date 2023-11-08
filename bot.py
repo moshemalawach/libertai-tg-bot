@@ -255,7 +255,7 @@ def generate_answer(messages, active_prompt, model):
             is_unfinished = True
 
             if tries < model['max_tries']:
-                to_yield += " <em>[writing ...]</em>"
+                to_yield += " **[writing ...]**"
 
         yield to_yield
 
@@ -265,7 +265,7 @@ def should_answer(messages, active_prompt, model):
 
     stopped, answer = complete(prompt, model, ["YES", "NO"])
     print(answer)
-    if answer.startswith(active_prompt['persona_name']):
+    if answer.startswith(active_prompt['persona_name']) and not answer.strip().endswith("NULL"):
         return True
     else:
         return False
