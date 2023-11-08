@@ -44,7 +44,7 @@ You will answer concisely, in a cool and funny way. You will never remind that y
     "scenario_start": "",
     "user_prepend": "<|im_start|>",
     "user_append": "\n",
-    "stop_sequences": ["<|im", "<|im_end|>","<|endoftext|>"],
+    "stop_sequences": ["<|", "<|im_end|>","<|endoftext|>"],
     "line_separator": "<|im_end|>\n",
 
     "name": "OpenHermes 2.5 (7B)",
