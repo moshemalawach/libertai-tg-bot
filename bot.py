@@ -2,6 +2,7 @@ import re
 import json
 import requests
 import telebot
+from functools import cache
 from telebot import types
 
 from dotenv import load_dotenv
@@ -93,14 +94,20 @@ def calculate_number_of_tokens(line):
 def get_user_name(user):
     return user.username or (user.first_name + " " + user.last_name)
 
+@cache
+def get_chat(chat_id):
+    return bot.get_chat(chat_id)
+
 def prepare_prompt(messages, active_prompt, model, add_persona=True):
     chat_log = ""
     current_tokens = 0
     persona_name = active_prompt['persona_name']
+    
+    chat = get_chat(messages[-1].chat.id)
 
     base_prompt = model['group_base_prompt'].replace("{{char}}", persona_name)\
-        .replace("{{room_title}}", messages[-1].chat.title)\
-        .replace("{{room_description}}", messages[-1].chat.bio or "")
+        .replace("{{room_title}}", chat.title)\
+        .replace("{{room_description}}", chat.description or "")
     prompt_calc = f"{base_prompt}\n{model['log_start']}\n{model['user_prepend']}{persona_name}{model['user_append']}"
     initial_prompt_tokens = calculate_number_of_tokens(prompt_calc)
     max_tokens = model['max_tokens'] - initial_prompt_tokens
