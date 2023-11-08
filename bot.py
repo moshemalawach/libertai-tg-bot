@@ -158,7 +158,7 @@ def prepare_prompt(messages, active_prompt, model, add_persona=True):
     else:
         return f"{base_prompt}\n{model['log_start']}\n{chat_log}{model['line_separator']}"
 
-def complete(prompt, model, stop_sequences, length=None):
+def complete(prompt, model, stop_sequences, length=None, chat_id="0"):
     print(prompt)
     params = {
         "prompt": prompt,
@@ -184,8 +184,13 @@ def complete(prompt, model, stop_sequences, length=None):
             "use_default_badwordsids": False
         })
     elif model['engine'] == "llamacpp":
-        print("slot_id", model['slot_id'])
-        slot_id = model['slot_id'] is None and -1 or model['slot_id']
+        if chat_id in SLOTS:
+            slot_id = SLOTS[chat_id]
+        else:
+            slot_id = -1
+            
+        print("slot_id", slot_id)
+        # slot_id = model['slot_id'] is None and -1 or model['slot_id']
         params.update({
             "n_predict": length is None and model['max_length'] or length,
             "slot_id": slot_id,
@@ -212,7 +217,8 @@ def complete(prompt, model, stop_sequences, length=None):
             print(response_data)
             return False, response_data['results'][0]['text']
         elif model['engine'] == "llamacpp":
-            model['slot_id'] = response_data['slot_id']
+            # model['slot_id'] = response_data['slot_id']
+            SLOTS[chat_id] = response_data['slot_id']
             stopped = response_data['stopped_eos'] or response_data['stopped_word']
             return stopped, response_data['content']
         elif model['engine'] == "openai":
@@ -221,7 +227,7 @@ def complete(prompt, model, stop_sequences, length=None):
         print(f"Error: Request failed with status code {response.status_code}")
         return True, None
 
-def generate_answer(messages, active_prompt, model):
+def generate_answer(messages, active_prompt, model, chat_id="0"):
     persona_name = active_prompt['persona_name']
     prompt = prepare_prompt(messages, active_prompt, model)
 
@@ -241,7 +247,7 @@ def generate_answer(messages, active_prompt, model):
 
     while is_unfinished and tries < model['max_tries']:
         tries += 1
-        stopped, last_result = complete(prompt + compounded_result, model, stop_sequences)
+        stopped, last_result = complete(prompt + compounded_result, model, stop_sequences, chat_id=chat_id)
         full_result = compounded_result + last_result
         results = full_result
         print(results)
@@ -319,7 +325,7 @@ def echo_all(message):
             if not should_answer(messages, ACTIVE_PROMPT, ACTIVE_MODEL):
                 return
             reply = None
-            for result in generate_answer(messages, ACTIVE_PROMPT, ACTIVE_MODEL):
+            for result in generate_answer(messages, ACTIVE_PROMPT, ACTIVE_MODEL, chat_id):
                 got_null = (result.strip('\n').strip().strip('"') == "NULL")
                 if got_null: break
 
