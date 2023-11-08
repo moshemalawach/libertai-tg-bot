@@ -185,7 +185,7 @@ def complete(prompt, model, stop_sequences, length=None):
         })
     elif model['engine'] == "llamacpp":
         print("slot_id", model['slot_id'])
-        slot_id = -1 if model['slot_id'] is None else model['slot_id']
+        slot_id = model['slot_id'] is None and -1 or model['slot_id']
         params.update({
             "n_predict": length is None and model['max_length'] or length,
             "slot_id": slot_id,
