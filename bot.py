@@ -308,7 +308,7 @@ def echo_all(message):
            
             # now we can process the message, using our AI model
             # we will use the last 10 messages as context
-            messages = HISTORIES[chat_id][-40:]
+            messages = HISTORIES[chat_id][-100:]
             if not should_answer(messages, ACTIVE_PROMPT, ACTIVE_MODEL):
                 return
             reply = None
