@@ -111,8 +111,8 @@ def prepare_prompt(messages, active_prompt, model, add_persona=True):
     for msg in messages:
         name = get_user_name(msg.from_user)
         # check if the message is from our telegram bot
-        if name == bot.get_me().username:
-            name = persona_name
+        # if name == bot.get_me().username:
+        #     name = persona_name
         # if name == active_prompt.users[0].username:
         #     name = user_name
         # elif name == active_prompt.users[1].username:
@@ -335,5 +335,6 @@ def edit_message(message):
 
 if __name__ == '__main__':
     read_history()
+    ACTIVE_PROMPT['persona_name'] = bot.get_me().username
     bot.polling()
     write_history()
