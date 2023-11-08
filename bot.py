@@ -64,12 +64,11 @@ SLOTS = {}
 
 def write_history():
     """Writes the chat history to a file as a json object.
-    For each chat only the last 100 messages are stored.
     """
     global HISTORIES
     to_write = {}
     for chat_id, history in HISTORIES.items():
-        to_write[str(chat_id)] = [msg.json for msg in history[-100:]]
+        to_write[str(chat_id)] = [msg.json for msg in history]
     with open(LOGS_FILE, "w") as f:
         json.dump(to_write, f)
 
