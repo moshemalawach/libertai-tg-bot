@@ -259,8 +259,21 @@ def generate_answer(messages, active_prompt, model):
                 to_yield += "..."
 
         yield to_yield
+        
+def basic_answer_checks(messages, active_prompt):
+    last_message = messages[-1]
+    if "bot" in last_message.text or active_prompt['persona_name'] in last_message.text:
+        return True
+    
+    if (last_message.reply_to_message is not None) and last_message.reply_to_message.from_user.username == active_prompt['persona_name']:
+        return True
+    
+    return False
 
 def should_answer(messages, active_prompt, model):
+    if not basic_answer_checks(messages, active_prompt):
+        return False
+    
     prompt = prepare_prompt(messages, active_prompt, model, add_persona=False)
     prompt = f"{prompt}{model['user_prepend']}"
 
