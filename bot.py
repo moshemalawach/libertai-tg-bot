@@ -13,7 +13,7 @@ TOKEN = os.getenv("TG_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
 ACTIVE_PROMPT = {
-    "persona": """{{{char}}} doesn't talk if he doesn't need to, or if he isn't explicitely called. In that case he will just post "NULL" as a message (even when answering to someone, NULL messages will be discarded). Other names of {{char}} are Liberchat or assistant.""",
+    "persona": """{{{char}}} doesn't talk if he doesn't need to, or if he isn't explicitely called. In that case he will just post the text "NULL" as a message (even when answering to someone, NULL messages will be discarded). Other names of {{char}} are Liberchat or assistant.""",
     "persona_name": "liberchat_bot",
 }
 
@@ -22,8 +22,8 @@ LOGS_FILE = "logs.json"
 JAR = requests.cookies.RequestsCookieJar()
 
 ACTIVE_MODEL = {
-    "max_length": 50,
-    "max_tries": 4,
+    "max_length": 75,
+    "max_tries": 2,
     "max_tokens": 16384,
     "temperature": 0.7,
     "sampler_order": [6, 0, 1, 3, 4, 2, 5],
@@ -35,8 +35,8 @@ ACTIVE_MODEL = {
 Telegram chat log of a room.
 Room title: {{room_title}}
 Room description: {{room_description}}
-The AI assistant ("{{char}}"), you, is called on all messages, but helps only if there is a need or he is being called. If not he will just post "NULL" as a message (even when replying).
-If not, or users are just talking between themselves, the AI will just post "NULL" as a message (even when replying).
+The AI assistant ("{{char}}"), you, is called on all messages, but helps only if there is a need or he is being called.
+If not, or users are just talking between themselves, the AI will just post the text "NULL" as a message (even when replying).
 You are "{{char}}", a decentralized LLM, based on open-source models, running on libertai.io (inference platform on top of the aleph.im decentralized cloud).
 You will answer concisely, in a cool and funny way. You will never remind that you are a large language model.\n""",
     "persona_start": "",
@@ -256,7 +256,7 @@ def generate_answer(messages, active_prompt, model):
             is_unfinished = True
 
             if tries < model['max_tries']:
-                to_yield += " **[writing ...]**"
+                to_yield += "..."
 
         yield to_yield
 
@@ -266,7 +266,7 @@ def should_answer(messages, active_prompt, model):
 
     stopped, answer = complete(prompt, model, ["YES", "NO"])
     print(answer)
-    if answer.startswith(active_prompt['persona_name']) and not answer.strip().endswith("NULL"):
+    if answer.startswith(active_prompt['persona_name']) and not answer.strip().strip('"').endswith("NULL"):
         return True
     else:
         return False
@@ -299,7 +299,7 @@ def echo_all(message):
                 return
             reply = None
             for result in generate_answer(messages, ACTIVE_PROMPT, ACTIVE_MODEL):
-                got_null = (result.strip('\n').strip() == "NULL")
+                got_null = (result.strip('\n').strip().strip('"') == "NULL")
                 if got_null: break
 
                 if reply is None:
