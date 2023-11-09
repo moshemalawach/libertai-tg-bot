@@ -4,7 +4,7 @@ ACTIVE_PROMPT = {
 }
 
 ACTIVE_MODEL = {
-    "max_length": 75,
+    "max_length": 150,
     "max_tries": 2,
     "max_tokens": 16384,
     "temperature": 0.7,
