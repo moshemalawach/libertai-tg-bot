@@ -7,7 +7,7 @@ def calculate_number_of_tokens(line):
     return len(line) / 2.7
 
 def get_user_name(user):
-    return user.username or (user.first_name + " " + user.last_name)
+    return user.username or ((user.first_name or "") + " " + (user.last_name or ""))
 
 def prepare_prompt(messages, active_prompt, model, add_persona=True, chat=None):
     chat_log = ""
