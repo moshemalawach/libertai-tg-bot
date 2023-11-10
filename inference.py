@@ -85,6 +85,11 @@ def complete(prompt, model, stop_sequences, length=None, chat_id="0"):
         "top_k": model['top_k'],
     }
 
+    if chat_id in SLOTS:
+        session, slot_id = SLOTS[chat_id]
+    else:
+        session, slot_id = requests.Session(), -1
+
     if model['engine'] == "kobold":
         params.update({
             "n": 1,
@@ -102,11 +107,6 @@ def complete(prompt, model, stop_sequences, length=None, chat_id="0"):
             "use_default_badwordsids": False
         })
     elif model['engine'] == "llamacpp":
-        if chat_id in SLOTS:
-            jar, slot_id = SLOTS[chat_id]
-        else:
-            jar, slot_id = requests.cookies.RequestsCookieJar(), -1
-            
         print("slot_id", slot_id)
         # slot_id = model['slot_id'] is None and -1 or model['slot_id']
         params.update({
@@ -125,7 +125,7 @@ def complete(prompt, model, stop_sequences, length=None, chat_id="0"):
             "max_tokens": length is None and model['max_length'] or length,
         })
 
-    response = requests.post(model['api_url'], json=params, cookies=jar)
+    response = session.post(model['api_url'], json=params)
 
     if response.status_code == 200:
         # Simulate the response (you will need to replace this with actual API response handling)
@@ -133,14 +133,20 @@ def complete(prompt, model, stop_sequences, length=None, chat_id="0"):
 
         if model['engine'] == "kobold":
             print(response_data)
-            return False, response_data['results'][0]['text']
+            return_data = False, response_data['results'][0]['text']
+
         elif model['engine'] == "llamacpp":
             # model['slot_id'] = response_data['slot_id']
-            SLOTS[chat_id] = jar, response_data['slot_id']
+            slot_id = response_data['slot_id']
             stopped = response_data['stopped_eos'] or response_data['stopped_word']
-            return stopped, response_data['content']
+            return_data = stopped, response_data['content']
+
         elif model['engine'] == "openai":
-            return False, response_data.choices[0]['text']
+            return_data = False, response_data.choices[0]['text']
+        
+        SLOTS[chat_id] = session, response_data['slot_id']
+
+        return return_data
     else:
         print(f"Error: Request failed with status code {response.status_code}")
         return True, None
