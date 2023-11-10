@@ -1,6 +1,5 @@
 import requests
 
-JAR = requests.cookies.RequestsCookieJar()
 SLOTS = {}
 
 def calculate_number_of_tokens(line):
@@ -104,9 +103,9 @@ def complete(prompt, model, stop_sequences, length=None, chat_id="0"):
         })
     elif model['engine'] == "llamacpp":
         if chat_id in SLOTS:
-            slot_id = SLOTS[chat_id]
+            jar, slot_id = SLOTS[chat_id]
         else:
-            slot_id = -1
+            jar, slot_id = requests.cookies.RequestsCookieJar(), -1
             
         print("slot_id", slot_id)
         # slot_id = model['slot_id'] is None and -1 or model['slot_id']
@@ -126,7 +125,7 @@ def complete(prompt, model, stop_sequences, length=None, chat_id="0"):
             "max_tokens": length is None and model['max_length'] or length,
         })
 
-    response = requests.post(model['api_url'], json=params, cookies=JAR)
+    response = requests.post(model['api_url'], json=params, cookies=jar)
 
     if response.status_code == 200:
         # Simulate the response (you will need to replace this with actual API response handling)
@@ -137,7 +136,7 @@ def complete(prompt, model, stop_sequences, length=None, chat_id="0"):
             return False, response_data['results'][0]['text']
         elif model['engine'] == "llamacpp":
             # model['slot_id'] = response_data['slot_id']
-            SLOTS[chat_id] = response_data['slot_id']
+            SLOTS[chat_id] = jar, response_data['slot_id']
             stopped = response_data['stopped_eos'] or response_data['stopped_word']
             return stopped, response_data['content']
         elif model['engine'] == "openai":
