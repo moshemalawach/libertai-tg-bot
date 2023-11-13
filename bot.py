@@ -28,6 +28,12 @@ SLOTS = {}
 def get_chat(chat_id):
     return bot.get_chat(chat_id)
 
+@bot.message_handler(commands=['clear'])
+def clear_history(message):
+    chat_id = str(message.chat.id)
+    reply = bot.reply_to(message, "Clearing history.")
+    HISTORIES[chat_id] = []
+    return
 
 @bot.message_handler(content_types=['text'])
 def handle_text_message(message):
@@ -47,12 +53,6 @@ def handle_text_message(message):
 
         if isinstance(message, types.Message):  # Check if it's a real message (ignores edited messages)
             HISTORIES[chat_id].append(message)
-
-            if message.text == "/clear": # and message.from_user.is_admin:
-                reply = bot.reply_to(message, "Clearing history.")
-                HISTORIES[chat_id] = []
-                return
-
            
             # now we can process the message, using our AI model
             # we will use the last 10 messages as context
@@ -170,5 +170,11 @@ def edit_message(message):
 if __name__ == '__main__':
     recover_logs()
     ACTIVE_PROMPT['persona_name'] = bot.get_me().username
+    bot.set_my_commands([
+        types.BotCommand("clear", "Clears the chat history."),
+    ], scope=types.BotCommandScopeAllPrivateChats())
+    bot.set_my_commands([
+        types.BotCommand("clear", "Clears the chat history for this group."),
+    ], scope=types.BotCommandScopeAllGroupChats())
     bot.polling()
     save_logs()
