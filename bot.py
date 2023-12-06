@@ -64,6 +64,7 @@ def handle_text_message(message):
         if isinstance(message, types.Message):  # Check if it's a real message (ignores edited messages)
             HISTORIES[chat_id].append(message)
             current_history[chat_id] += 1
+            save_logs()
            
             # now we can process the message, using our AI model
             # we will use the last history messages as context
@@ -86,8 +87,8 @@ def handle_text_message(message):
             if reply is not None:
                 HISTORIES[chat_id].append(reply)
                 current_history[chat_id] += 1
-            
             save_logs()
+            
     else:
         print(message)
 
