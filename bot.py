@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 from logs import recover as recover_logs, save as save_logs, HISTORIES
 from inference import complete, prepare_prompt
-from settings import ACTIVE_MODEL, ACTIVE_PROMPT
+from settings import ACTIVE_MODEL, ACTIVE_PROMPT, COMMANDS_DICT
 
 load_dotenv()
 
@@ -183,11 +183,17 @@ def edit_message(message):
 if __name__ == '__main__':
     recover_logs()
     ACTIVE_PROMPT['persona_name'] = bot.get_me().username
+
+    # use the commands dict to set the commands for the bot
     bot.set_my_commands([
-        types.BotCommand("clear", "Clears the chat history."),
+        types.BotCommand(command[1:].split(' ')[0], description)
+        for command, description in COMMANDS_DICT.items()
     ], scope=types.BotCommandScopeAllPrivateChats())
+
     bot.set_my_commands([
-        types.BotCommand("clear", "Clears the chat history for this group."),
+        types.BotCommand(command[1:].split(' ')[0], description)
+        for command, description in COMMANDS_DICT.items()
     ], scope=types.BotCommandScopeAllGroupChats())
+
     bot.polling()
     save_logs()
