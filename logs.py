@@ -4,8 +4,8 @@ HISTORIES = {}
 def recover():
     """Recovers the chat history from a file.
     """
-    global HISTORIES
-    HISTORIES = read_history()
+    for key, value in  read_history().items():
+        HISTORIES[key] = value
 
 def save():
     """Saves the chat history to a file.
