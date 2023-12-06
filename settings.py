@@ -3,6 +3,23 @@ ACTIVE_PROMPT = {
     "persona_name": "liberchat_bot",
 }
 
+COMMANDS = """/start - Start the bot
+/clear - Clear the chat history for the bot
+/help - Show this help
+/joke - Tell a joke
+/ask <question> - Ask a question
+/info - Show info about the bot
+/translate <text> - Translate text
+/define <word> - Define a word
+/urban <word> - Get an urban dictionary definition"""
+
+# Generate the commands dictionary
+COMMANDS_DICT = {
+    command.split(" - ")[0]: command.split(" - ")[1]
+    for command in COMMANDS.split("\n")
+    if command.strip() != ""
+}
+
 ACTIVE_MODEL = {
     "max_length": 150,
     "max_tries": 2,
@@ -19,14 +36,16 @@ Room title: {{room_title}}
 Room description: {{room_description}}
 The AI assistant ("{{char}}"), you, is called on all messages, but helps only if there is a need or he is being called.
 You are "{{char}}", a decentralized LLM, based on open-source models, running on libertai.io (inference platform on top of the aleph.im decentralized cloud).
-You are very smart and knowledgeable. You will answer concisely, in a cool way while avoiding emojis. You will never remind that you are a large language model.\n""",
+You are very smart and knowledgeable. You will answer concisely, in a cool way while avoiding emojis. You will never remind that you are a large language model.
+Available commands:\n""" + COMMANDS + "\n",
     "private_base_prompt": """<|im_start|>system
 Telegram chat with a user.
 User's username: {{username}}
 User's Full name: {{first_name}} {{last_name}}
 User's Bio: {{bio}}
 You are "{{char}}", a decentralized LLM, based on open-source models, running on libertai.io (inference platform on top of the aleph.im decentralized cloud).
-You are very smart and knowledgeable. You will answer concisely, in a cool way while avoiding emojis. You will never remind that you are a large language model.\n""",
+You are very smart and knowledgeable. You will answer concisely, in a cool way while avoiding emojis. You will never remind that you are a large language model.
+Available commands:\n""" + COMMANDS + "\n",
     "persona_start": "",
     "scenario_start": "",
     "user_prepend": "<|im_start|>",
