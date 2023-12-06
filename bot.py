@@ -16,6 +16,8 @@ load_dotenv()
 TOKEN = os.getenv("TG_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
+current_history = {} # Store the current chat history count for each chat
+
 
 last_read_message = None  # Store the ID of the last processed message
 
@@ -49,14 +51,24 @@ def handle_text_message(message):
             chat_id = str(message.chat.id) + "_" + str(message.message_thread_id)
         if (chat_id not in HISTORIES):
             HISTORIES[chat_id] = []
+            current_history[chat_id] = 0
+        elif chat_id not in current_history:
+            # We take the lowest number between 40 and the current history length
+            current_history[chat_id] = min(ACTIVE_MODEL['low_message_water'], len(HISTORIES[chat_id]))
+        else:
+            # if it's higher than 80, we set to 40
+            if current_history[chat_id] > ACTIVE_MODEL['high_message_water']:
+                current_history[chat_id] = ACTIVE_MODEL['low_message_water']
 
 
         if isinstance(message, types.Message):  # Check if it's a real message (ignores edited messages)
             HISTORIES[chat_id].append(message)
+            current_history[chat_id] += 1
            
             # now we can process the message, using our AI model
-            # we will use the last 10 messages as context
-            messages = HISTORIES[chat_id][-30:]
+            # we will use the last history messages as context
+            messages = HISTORIES[chat_id][-current_history[chat_id]:]
+            # messages = HISTORIES[chat_id][-30:]
             if chat.type != 'private' and not should_answer(messages, ACTIVE_PROMPT, ACTIVE_MODEL):
                 return
             reply = None
@@ -73,6 +85,7 @@ def handle_text_message(message):
 
             if reply is not None:
                 HISTORIES[chat_id].append(reply)
+                current_history[chat_id] += 1
             
             save_logs()
     else:

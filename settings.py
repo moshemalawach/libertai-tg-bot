@@ -40,4 +40,6 @@ You are very smart and knowledgeable. You will answer concisely, in a cool way w
     "pass_credentials": True,
 
     "slot_id": None,
+    "low_message_water": 40,
+    "high_message_water": 80
 }
