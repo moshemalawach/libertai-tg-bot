@@ -20,9 +20,10 @@ def read_history():
         with open(LOGS_FILE, "r") as f:
             histories = json.load(f)
             for chat_id in histories.keys():
+                print(chat_id, len(histories[chat_id]))
                 histories[chat_id] = [
                     types.Message.de_json(item) for item in histories[chat_id]
                 ]
         return histories
     except FileNotFoundError:
-        pass
+        return {}
