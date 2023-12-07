@@ -145,6 +145,10 @@ def basic_answer_checks(messages, active_prompt):
     if (last_message.reply_to_message is not None) and last_message.reply_to_message.from_user.username == active_prompt['persona_name']:
         return True
     
+    for command in COMMANDS_DICT.keys():
+        if last_message.text.startswith(command.split(" ")[0]):
+            return True
+    
     return False
 
 def should_answer(messages, active_prompt, model):
