@@ -33,8 +33,11 @@ def get_chat(chat_id):
 @bot.message_handler(commands=['clear'])
 def clear_history(message):
     chat_id = str(message.chat.id)
+    print(chat_id)
     reply = bot.reply_to(message, "Clearing history.")
     HISTORIES[chat_id] = []
+    current_history[chat_id] = 0
+    save_logs()
     return
 
 @bot.message_handler(content_types=['text'])
