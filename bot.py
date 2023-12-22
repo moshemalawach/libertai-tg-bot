@@ -38,7 +38,7 @@ async def get_chat(chat_id):
 @bot.message_handler(commands=['clear'])
 async def clear_history(message):
     chat_id = str(message.chat.id)
-    reply = bot.reply_to(message, "Clearing history.")
+    reply = await bot.reply_to(message, "Clearing history.")
     HISTORIES[chat_id] = []
     current_history[chat_id] = 0
     await save_logs()
