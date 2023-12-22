@@ -1,4 +1,5 @@
 import requests
+import aiohttp
 
 SLOTS = {}
 
@@ -8,7 +9,7 @@ def calculate_number_of_tokens(line):
 def get_user_name(user):
     return user.username or ((user.first_name or "") + " " + (user.last_name or ""))
 
-def prepare_prompt(messages, active_prompt, model, add_persona=True, chat=None):
+async def prepare_prompt(messages, active_prompt, model, add_persona=True, chat=None):
     chat_log = ""
     current_tokens = 0
     persona_name = active_prompt['persona_name']
@@ -76,7 +77,7 @@ def prepare_prompt(messages, active_prompt, model, add_persona=True, chat=None):
     else:
         return f"{base_prompt}\n{model['log_start']}\n{chat_log}{model['line_separator']}"
 
-def complete(prompt, model, stop_sequences, length=None, chat_id="0"):
+async def complete(prompt, model, stop_sequences, length=None, chat_id="0"):
     print(prompt)
     params = {
         "prompt": prompt,
@@ -88,7 +89,7 @@ def complete(prompt, model, stop_sequences, length=None, chat_id="0"):
     if chat_id in SLOTS:
         session, slot_id = SLOTS[chat_id]
     else:
-        session, slot_id = requests.Session(), -1
+        session, slot_id = aiohttp.ClientSession(), -1
 
     if model['engine'] == "kobold":
         params.update({
@@ -125,29 +126,29 @@ def complete(prompt, model, stop_sequences, length=None, chat_id="0"):
             "max_tokens": length is None and model['max_length'] or length,
         })
 
-    response = session.post(model['api_url'], json=params)
+    async with session.post(model['api_url'], json=params) as response:
 
-    if response.status_code == 200:
-        # Simulate the response (you will need to replace this with actual API response handling)
-        response_data = response.json()
+        if response.status == 200:
+            # Simulate the response (you will need to replace this with actual API response handling)
+            response_data = await response.json()
 
-        if model['engine'] == "kobold":
-            print(response_data)
-            return_data = False, response_data['results'][0]['text']
+            if model['engine'] == "kobold":
+                print(response_data)
+                return_data = False, response_data['results'][0]['text']
 
-        elif model['engine'] == "llamacpp":
-            # model['slot_id'] = response_data['slot_id']
-            slot_id = response_data['slot_id']
-            stopped = response_data['stopped_eos'] or response_data['stopped_word']
-            return_data = stopped, response_data['content']
+            elif model['engine'] == "llamacpp":
+                # model['slot_id'] = response_data['slot_id']
+                slot_id = response_data['slot_id']
+                stopped = response_data['stopped_eos'] or response_data['stopped_word']
+                return_data = stopped, response_data['content']
 
-        elif model['engine'] == "openai":
-            return_data = False, response_data.choices[0]['text']
-        
-        SLOTS[chat_id] = session, response_data['slot_id']
+            elif model['engine'] == "openai":
+                return_data = False, response_data.choices[0]['text']
+            
+            SLOTS[chat_id] = session, response_data['slot_id']
 
-        return return_data
-    else:
-        print(f"Error: Request failed with status code {response.status_code}")
-        return True, None
+            return return_data
+        else:
+            print(f"Error: Request failed with status code {response.status}")
+            return True, None
 

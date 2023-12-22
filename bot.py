@@ -3,6 +3,8 @@ import os
 import json
 import requests
 import telebot
+import asyncio
+from telebot.async_telebot import AsyncTeleBot
 from functools import cache
 from telebot import types
 from dotenv import load_dotenv
@@ -14,7 +16,7 @@ from settings import ACTIVE_MODEL, ACTIVE_PROMPT, COMMANDS_DICT
 load_dotenv()
 
 TOKEN = os.getenv("TG_TOKEN")
-bot = telebot.TeleBot(TOKEN)
+bot = AsyncTeleBot(TOKEN)
 
 current_history = {} # Store the current chat history count for each chat
 
@@ -22,31 +24,33 @@ current_history = {} # Store the current chat history count for each chat
 last_read_message = None  # Store the ID of the last processed message
 
 SLOTS = {}
-
+CHATS = {}
 """ Example chat message:
 {'content_type': 'text', 'id': 69, 'message_id': 69, 'from_user': {'id': 414434471, 'is_bot': False, 'first_name': 'Moshe', 'username': 'Jonnyjonnyjon', 'last_name': 'Malawach [AlephIM]', 'language_code': 'fr', 'can_join_groups': None, 'can_read_all_group_messages': None, 'supports_inline_queries': None, 'is_premium': True, 'added_to_attachment_menu': None}, 'date': 1699449497, 'chat': {'id': -4050541508, 'type': 'group', 'title': 'me testing shit', 'username': None, 'first_name': None, 'last_name': None, 'is_forum': None, 'photo': None, 'bio': None, 'join_to_send_messages': None, 'join_by_request': None, 'has_private_forwards': None, 'has_restricted_voice_and_video_messages': None, 'description': None, 'invite_link': None, 'pinned_message': None, 'permissions': None, 'slow_mode_delay': None, 'message_auto_delete_time': None, 'has_protected_content': None, 'sticker_set_name': None, 'can_set_sticker_set': None, 'linked_chat_id': None, 'location': None, 'active_usernames': None, 'emoji_status_custom_emoji_id': None, 'has_hidden_members': None, 'has_aggressive_anti_spam_enabled': None, 'emoji_status_expiration_date': None}, 'sender_chat': None, 'forward_from': None, 'forward_from_chat': None, 'forward_from_message_id': None, 'forward_signature': None, 'forward_sender_name': None, 'forward_date': None, 'is_automatic_forward': None, 'reply_to_message': None, 'via_bot': None, 'edit_date': None, 'has_protected_content': None, 'media_group_id': None, 'author_signature': None, 'text': 'what is aleph.im, does someone know?', 'entities': [<telebot.types.MessageEntity object at 0x7f4aa97033d0>], 'caption_entities': None, 'audio': None, 'document': None, 'photo': None, 'sticker': None, 'video': None, 'video_note': None, 'voice': None, 'caption': None, 'contact': None, 'location': None, 'venue': None, 'animation': None, 'dice': None, 'new_chat_member': None, 'new_chat_members': None, 'left_chat_member': None, 'new_chat_title': None, 'new_chat_photo': None, 'delete_chat_photo': None, 'group_chat_created': None, 'supergroup_chat_created': None, 'channel_chat_created': None, 'migrate_to_chat_id': None, 'migrate_from_chat_id': None, 'pinned_message': None, 'invoice': None, 'successful_payment': None, 'connected_website': None, 'reply_markup': None, 'message_thread_id': None, 'is_topic_message': None, 'forum_topic_created': None, 'forum_topic_closed': None, 'forum_topic_reopened': None, 'has_media_spoiler': None, 'forum_topic_edited': None, 'general_forum_topic_hidden': None, 'general_forum_topic_unhidden': None, 'write_access_allowed': None, 'user_shared': None, 'chat_shared': None, 'story': None, 'json': {'message_id': 69, 'from': {'id': 414434471, 'is_bot': False, 'first_name': 'Moshe', 'last_name': 'Malawach [AlephIM]', 'username': 'Jonnyjonnyjon', 'language_code': 'fr', 'is_premium': True}, 'chat': {'id': -4050541508, 'title': 'me testing shit', 'type': 'group', 'all_members_are_administrators': True}, 'date': 1699449497, 'text': 'what is aleph.im, does someone know?', 'entities': [{'offset': 8, 'length': 8, 'type': 'url'}]}}"""
 
-@cache
-def get_chat(chat_id):
-    return bot.get_chat(chat_id)
+# @cache
+async def get_chat(chat_id):
+    if chat_id in CHATS:
+        return CHATS[chat_id]
+    
+    return await bot.get_chat(chat_id)
 
 @bot.message_handler(commands=['clear'])
-def clear_history(message):
+async def clear_history(message):
     chat_id = str(message.chat.id)
-    print(chat_id)
     reply = bot.reply_to(message, "Clearing history.")
     HISTORIES[chat_id] = []
     current_history[chat_id] = 0
-    save_logs()
+    await save_logs()
     return
 
 @bot.message_handler(content_types=['text'])
-def handle_text_message(message):
+async def handle_text_message(message):
     if message.chat.type in ['group', 'supergroup', 'private']:  # Check if the chat is a group
         # if message.chat.type == 'private':
         #     chat = message.chat.id
         # else:
-        chat = get_chat(message.chat.id)
+        chat = await get_chat(message.chat.id)
 
         chat_id = str(message.chat.id)
 
@@ -67,37 +71,37 @@ def handle_text_message(message):
         if isinstance(message, types.Message):  # Check if it's a real message (ignores edited messages)
             HISTORIES[chat_id].append(message)
             current_history[chat_id] += 1
-            save_logs()
+            await save_logs()
            
             # now we can process the message, using our AI model
             # we will use the last history messages as context
             messages = HISTORIES[chat_id][-current_history[chat_id]:]
             # messages = HISTORIES[chat_id][-30:]
-            if chat.type != 'private' and not should_answer(messages, ACTIVE_PROMPT, ACTIVE_MODEL):
+            if chat.type != 'private' and not (await should_answer(messages, ACTIVE_PROMPT, ACTIVE_MODEL)):
                 return
             reply = None
-            for result in generate_answer(messages, ACTIVE_PROMPT, ACTIVE_MODEL, chat_id=chat_id, chat=chat):
+            async for result in generate_answer(messages, ACTIVE_PROMPT, ACTIVE_MODEL, chat_id=chat_id, chat=chat):
                 got_null = (result.strip('\n').strip().strip('"') == "NULL")
                 if got_null: break
 
                 if reply is None:
-                    reply = bot.reply_to(message, result)
+                    reply = await bot.reply_to(message, result)
                 else:
                     # update the reply
                     print("updating message")
-                    bot.edit_message_text(chat_id=message.chat.id, message_id=reply.message_id, text=result)
+                    await bot.edit_message_text(chat_id=message.chat.id, message_id=reply.message_id, text=result)
 
             if reply is not None:
                 HISTORIES[chat_id].append(reply)
                 current_history[chat_id] += 1
-            save_logs()
+            await save_logs()
             
     else:
         print(message)
 
-def generate_answer(messages, active_prompt, model, chat_id="0", chat=None):
+async def generate_answer(messages, active_prompt, model, chat_id="0", chat=None):
     persona_name = active_prompt['persona_name']
-    prompt = prepare_prompt(messages, active_prompt, model, chat=chat)
+    prompt = await prepare_prompt(messages, active_prompt, model, chat=chat)
 
     is_unfinished = True
     tries = 0
@@ -115,7 +119,7 @@ def generate_answer(messages, active_prompt, model, chat_id="0", chat=None):
 
     while is_unfinished and tries < model['max_tries']:
         tries += 1
-        stopped, last_result = complete(prompt + compounded_result, model, stop_sequences, chat_id=chat_id)
+        stopped, last_result = await complete(prompt + compounded_result, model, stop_sequences, chat_id=chat_id)
         full_result = compounded_result + last_result
         results = full_result
         print(results)
@@ -140,7 +144,7 @@ def generate_answer(messages, active_prompt, model, chat_id="0", chat=None):
 
         yield to_yield
         
-def basic_answer_checks(messages, active_prompt):
+async def basic_answer_checks(messages, active_prompt):
     last_message = messages[-1]
     if "bot" in last_message.text or active_prompt['persona_name'] in last_message.text:
         return True
@@ -154,8 +158,8 @@ def basic_answer_checks(messages, active_prompt):
     
     return False
 
-def should_answer(messages, active_prompt, model):
-    if not basic_answer_checks(messages, active_prompt):
+async def should_answer(messages, active_prompt, model):
+    if not await basic_answer_checks(messages, active_prompt):
         return False
     
     return True
@@ -188,20 +192,24 @@ def edit_message(message):
 #                 break
 #     print(message)
 
-if __name__ == '__main__':
+async def run_bot():
     recover_logs()
-    ACTIVE_PROMPT['persona_name'] = bot.get_me().username
+    ACTIVE_PROMPT['persona_name'] = (await bot.get_me()).username
 
     # use the commands dict to set the commands for the bot
-    bot.set_my_commands([
+    await bot.set_my_commands([
         types.BotCommand(command[1:].split(' ')[0], description)
         for command, description in COMMANDS_DICT.items()
     ], scope=types.BotCommandScopeAllPrivateChats())
 
-    bot.set_my_commands([
+    await bot.set_my_commands([
         types.BotCommand(command[1:].split(' ')[0], description)
         for command, description in COMMANDS_DICT.items()
     ], scope=types.BotCommandScopeAllGroupChats())
+    
+    await bot.polling()
+    
+if __name__ == '__main__':
 
-    bot.polling()
+    asyncio.run(run_bot())
     save_logs()
