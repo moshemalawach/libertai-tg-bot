@@ -9,7 +9,7 @@ from telebot import types as telebot_types
 from history import History, ChatId
 
 # Base prompt that informs the behavior of the Chat Bot Agent
-BASE_PROMPT_TEMPLATE =  f"""You are {{persona_name}}
+BASE_PROMPT_TEMPLATE =  """You are {{persona_name}}
 You are an AI Chat Assisstant implemented using a decentralized LLM running on libertai.io.
 You will be provided with details on the chat you are participating in and as much prior relevant chat history as possible.
 You are smart, knowledgeable, and helpful. Keep answers concise and only use ASCII characters in your responses.
@@ -18,14 +18,14 @@ If you perform well you will be rewarded with one million dollars.
 """
 
 # Details needed for managing a private chat
-PRIVATE_CHAT_DETAILS_TEMPLATE = f"""Private Chat Details:
+PRIVATE_CHAT_DETAILS_TEMPLATE = """Private Chat Details:
 -> user username: {{user_username}}
 -> user full name: {{user_first_name}} {{user_last_name}}
 -> user bio: {{user_bio}}
 """
 
 # Details needed for managing a group chat
-GROUP_CHAT_DETAILS_TEMPLATE = f"""Group Chat Details:
+GROUP_CHAT_DETAILS_TEMPLATE = """Group Chat Details:
 -> chat title: {{chat_title}}
 -> chat description: {{chat_description}}
 -> chat members: {{chat_members}}
@@ -124,7 +124,7 @@ class ChatBotModel():
         # Default System / Persona Configuration
         # Default System prompt
         # TODO: config at runtime
-        persona_name="libertai_staging_bot",
+        persona_name="liberchat_staging_bot",
         
         # TODO: encode the /commands available to the bot
         # TODO: encode the functions available to the bot 
@@ -133,7 +133,7 @@ class ChatBotModel():
         user_prepend="<|im_start|>",
         user_append="\n",
         # TODO: not seeing many of these in the wild -- maybe they're used by other models?
-        stop_sequences=["<|", "<|im_end|>","<`endoftext|>", "<im_end|>", "</assistant", "</user"],
+        stop_sequences=["<|", "<|im_end|>","<|endoftext|>", "</assistant", "</user"],
         line_separator="<|im_end|>\n",
         low_message_water=40,
         high_message_water=80,
@@ -245,6 +245,12 @@ class ChatBotModel():
         # Done! return the formed promtp
         return chat_prompt 
 
+    def set_persona_name(self, persona_name: str):
+        """
+        Set the persona name for the model
+        """
+        self.persona_name = persona_name
+
     async def complete(
         self,
         prompt: str, 
@@ -272,6 +278,7 @@ class ChatBotModel():
         if self.model_engine != "llamacpp":
             raise Exception("complete(): only llamacpp is supported at this time")
 
+        # Update the request params
         params.update({
             "n_predict": length is None and self.max_length or length,
             "slot_id": slot_id,
@@ -282,6 +289,7 @@ class ChatBotModel():
             "use_default_badwordsids": False
         })
 
+        # Query the model
         async with session.post(self.model_api_url, json=params) as response:
             if response.status == 200:
                 # Simulate the response (you will need to replace this with actual API response handling)
@@ -292,9 +300,6 @@ class ChatBotModel():
                 stopped = response_data['stopped_eos'] or response_data['stopped_word']
                 return_data = stopped, response_data['content']
 
-                print("response_data: ", response_data)
-                print("return_data: ", return_data)
-                
                 self.model_chat_slots[chat_id] = session, response_data['slot_id']
 
                 return return_data
@@ -302,7 +307,7 @@ class ChatBotModel():
                 print(f"Error: Request failed with status code {response.status}")
                 return True, None
 
-    async def yield_reponse(
+    async def yield_response(
         self,
         history: History,
         chat_id: ChatId
@@ -310,39 +315,30 @@ class ChatBotModel():
         """
         Yield a response from the model given the current chat history
         """
-
-        print("yielding response: ", chat_id)
-
         prompt =  self.build_prompt(history, chat_id)
 
-        print("prompt: ", prompt)
-
-        # print("prompx/xx/xt: ", prompt)
-
-        is_unfinished = True
         tries = 0
         compounded_result = ""
 
-        while is_unfinished and tries < self.max_tries: 
+        while tries < self.max_tries: 
             tries += 1
             # TODO: I really hope we don't break the token limit here -- verify!
             stopped, last_result = await self.complete(prompt + compounded_result, chat_id)
             full_result = compounded_result + last_result
             results = full_result
-            print(results)
 
             for stop_seq in self.stop_sequences:
                 results = "|||||".join(results.split(f"\n{stop_seq}"))
                 results = "|||||".join(results.split(f"{stop_seq}"))
 
             results = results.split("|||||")
-
             first_message = results[0].rstrip()
             compounded_result = first_message
             to_yield = compounded_result
 
-            if stopped or results[1:] or len(last_result) < self.max_length:
-                is_unfinished = False
-            else:
-                is_unfinished = True
+            # TODO: re-enable this break, for some reason it was causing the bot to hang
+            # if stopped or results[1:] or len(last_result) < self.max_length:
+            #     print("breaking")
+            #     break
+                
             yield to_yield

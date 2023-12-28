@@ -4,8 +4,8 @@ import asyncio
 from dotenv import load_dotenv
 import logging
 
-# logger = telebot.logger
-# telebot.logger.setLevel(logging.DEBUG)
+logger = telebot.logger
+telebot.logger.setLevel(logging.INFO)
 
 from telebot import types as telebot_types, async_telebot
 from history import History, chat_id_from_message
@@ -13,7 +13,7 @@ from chat_bot_model import ChatBotModel
 
 load_dotenv()
 TOKEN = os.getenv("TG_TOKEN")
-BOT = async_telebot.AsyncTeleBot(TOKEN)
+BOT = async_telebot.AsyncTeleBot(TOKEN, colorful_logs=True)
 HISTORY = History()
 # TODO: should I need to pull the BOT name from the BOT object?
 #  or can we just configure this?
@@ -97,7 +97,7 @@ async def handle_private_text_messages(message: telebot_types.Message):
     Use the chatbot to construct an informed response
     """
 
-    # # TODO: we may not need this check anymore
+    # # TODO: enable check
     # # Filter for unhandled messages
     # if message.chat.type not in ['private']:
     #     BOT.reply_to(message, 
@@ -108,19 +108,20 @@ async def handle_private_text_messages(message: telebot_types.Message):
 
     chat_id = HISTORY.add_message(message)
 
-    reply = await BOT.reply_to(message, 'Bot is thinking...')
+    result = "Bot is thinking..."
+    reply = await BOT.reply_to(message, result)
 
-    # TODO: add a lil text animation here
-    only_null = True
-    async for result in CHAT_BOT_MODEL.yield_reponse(HISTORY, chat_id):
+    history_append = False
+    async for yield_result in CHAT_BOT_MODEL.yield_response(HISTORY, chat_id):
         # TODO: what is this controlling?
-        got_null = (result.strip('\n').strip().strip('"') == "NULL")
+        got_null = (yield_result.strip('\n').strip().strip('"') == "NULL")
         if got_null: break
-        if not only_null:
-            only_null = False
-        await BOT.edit_message_text(chat_id=message.chat.id, message_id=reply.message_id, text=result)
+        history_append = True
+        if yield_result != result and yield_result != "":
+            result = yield_result
+            reply = await BOT.edit_message_text(chat_id=message.chat.id, message_id=reply.message_id, text=result)
 
-    if not only_null:
+    if history_append:
         HISTORY.add_message(reply)
     else:
         await BOT.edit_message_text(chat_id=message.chat.id, message_id=reply.message_id, text="I don't know how to respond to that.")
@@ -136,16 +137,20 @@ async def ask_command(message: telebot_types.Message):
     Use the chatbot to construct an informed response
     """
 
-    print("ASK COMMAND")
-
     await BOT.reply_to(message, 
         "Hi there!, I'm a bot, and I'm not programmed to handle this type of message yet.\n",
     )
     return None
 
-# Run the BOT
+# Run the Bot
 async def run_bot():
-    print("Starting BOT...")
+    print("Starting Bot...")
+
+    # Set the persona name for the bot
+    me = await BOT.get_me()
+    persona_name = me.username
+    print(f"Bot persona name: {persona_name}")
+    CHAT_BOT_MODEL.set_persona_name(persona_name)
 
     # Register commands for private and group chats
     await BOT.set_my_commands([
