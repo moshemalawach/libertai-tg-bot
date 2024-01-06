@@ -112,8 +112,6 @@ async def handle_private_text_messages(message: telebot_types.Message):
     reply = await BOT.reply_to(message, result)
 
     async for (code, content) in CHAT_BOT_MODEL.yield_response(HISTORY, chat_id):
-        print(f"code: {code}, content: {content}")
-
         if content != result:
             result = content
             reply = await BOT.edit_message_text(chat_id=message.chat.id, message_id=reply.message_id, text=result)

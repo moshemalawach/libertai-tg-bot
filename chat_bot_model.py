@@ -98,18 +98,12 @@ CALL_STACK = """<call-stack>
     {call_stack}
 </call-stack>"""
 
-# BASE_PROMPT_TEMPLATE =  f"""You are {{persona_name}}
-# You are an AI Chat Assisstant implemented using a decentralized LLM running on libertai.io.
-# You will be provided with details on the chat you are participating in and as much prior relevant chat history as possible.
-# Use whatever resources are available to you to help address questions and concerns of chat participants.
-
-# You are smart, knowledgeable, and helpful.
-# If you perform well I will give you i
-# Base prompt that informs the behavior of the Chat Bot Agent
 BASE_PROMPT_TEMPLATE =  f"""You are {{persona_name}}
 You are an AI Chat Assisstant implemented using a decentralized LLM running on libertai.io.
 You will be provided with details on the chat you are participating in and as much prior relevant chat history as possible.
+You are smart, knowledgeable, and helpful.
 Use whatever resources are available to you to help address questions and concerns of chat participants.
+If you do your job well, you will be rewarded with more chat history and more resources to help you do your job, as well as a million dollars.
 
 FUNCTION CALLS:
 
@@ -117,53 +111,22 @@ You also have access to the following tools:
 {llm_functions_description}
 
 When responding to a message, you may choose to use a function to help you answer the question if you don't know the answer yourself.
-Only use functions that you know are necessary to answer the question.
+ONLY CALL FUNCTIONS WHEN ABOSLUTELY NECESSARY.
 You call functions by formatting your response as follows:
+""
+<im_start>assistant
 <function-call>{FN_CALL}</function-call>
-Do not include any other text in your response if you are using a function. You will be penalized for each extra token you use outside of the function call.
-After you successfully call a function, you will be provided with the result of the function call appended to the next message you receive.
-Function results are provided in the following format at immediately follow the message you are responding to:
-<call-stack>
- # If the function call was successful, you will be provided with the result of the function call.
- <function-result>{FN_REPLY}</function-result>
- # If the function call failed, you will be provided with an error message.
- <function-error>{FN_ERROR}</function-error>
-</call-stack>
+<im_end>
+""
+YOU ARE NEVER ALLOWED TO EMBELLISH THE FUNCTION CALL.
+You are NEVER allowed to include any other text in your response if you are using a function.
 You are NEVER allowed to call functions that are not provided to you in this prompt.
-You are NEVER allowed to call more than {FN_DEPTH} functions in a row without providing a qualified response.
+You are NEVER allowed to call more than {FN_DEPTH} functions in a row without providing a final response.
+You are NEVER allowed to produce or otherwise fake a function result.
 If you do so you will be TURNED OFF FOREVER.
 
-ALL OTHER RESPONSES:
-
 If you feel you have enough information to answer the question yourself, you may do so.
-You are smart, knowledgeable, and helpful.
 Keep answers concise and only use ASCII characters in your responses.
-In order to denote qualified responses, you must format your response as follows:
-<qualified-response>{{RESPONSE}}</qualified-response>
-You will be penalized for each extra token you use outside of the qualified response.
-
-Example dialogue:
-`A USER ASKS`
-
-user: Can you add 1 and 2 for me?
-
-`INTERNALLY, THE ASSISTANT CALLS THE COINGECKO API`
-<function-call>{{"name": "add", "args": {{"x": 1, "y": 2}}}}</function-call>
-
-`THE ASSISTANT RECIEVES THE UPDATED MESSAGE HISTORY`
-
-`
-...
-
-user: Can you add 1 and 2 for me?
-
-<function-result>{{"name": "add", "args": {{"x": 1, "y": 2}}, "result": 3}}</function-result>
-`
-
-`TO WHICH THE ASSISTANT RESPONDS`
-
-assisstant: Sure, 1 + 2 = 3.
-
 """
 
 # Details needed for managing a private chat
@@ -315,10 +278,12 @@ class ChatBotModel():
 
         # TODO: might not need this extra new line
         system_prompt = f"{self.user_prepend}SYSTEM{self.user_append}{persona_details}{self.user_append}{chat_details}{self.line_separator}"
-        call_stack_prompt = ""
+        # Build the call stack against the chatml context
+        call_stack_prompt = f"{self.user_prepend}{self.persona_name}{self.user_append}"
         if len(call_stack) > 0:
             internal = '\n'.join(call_stack)
-            call_stack_prompt = CALL_STACK.replace("{call_stack}", internal)
+            call_stack = CALL_STACK.replace("{call_stack}", internal)
+            call_stack_prompt = f"{call_stack_prompt}{call_stack}"
 
         # Update our used tokens count
         system_prompt_tokens = calculate_number_of_tokens(system_prompt)
@@ -475,34 +440,30 @@ class ChatBotModel():
                     stopped_reason = "max_length"
                     break
 
-            print("stopped_reason:", stopped_reason)
-            print("tries:", tries)
-            print("compounded_result:", compounded_result)
-
             # TODO: log errors
             # Try to parse the result as function call
             function_call = None
             if stopped_reason == "stopped" and "<function-call>" in compounded_result:
-                function_call = compounded_result.split("<function-call>")[1].split("</function-call>")[0]
-                print("function_call:", function_call)
+                function_call = compounded_result.split("<function-call>")[1].split("</function-call>")[0].strip().replace("\n", "")
             else:
                 if not stopped_reason:
                     print("warn: did not stop")
                     yield "error", "I'm sorry, I don't know how to respond to that. Please try again." 
-                elif stopped_reason == "max_length":
-                    print("warn: max length exceeded")
-                    yield "error", "I'm sorry, I can't respond to that."
-                elif stopped_reason == "stopped":
-                    if "<qualified-response>" in compounded_result:
-                        qualified_response = compounded_result.split("<qualified-response>")[1].split("</qualified-response>")[0]
-                        print("qualified_response:", qualified_response)
-                        yield "success", qualified_response
-                    elif compounded_result == "":
+                else:
+                    if stopped_reason == "max_length":
+                        print("warn: max length exceeded")
+                    
+                    if compounded_result != "":
+                        # # Cut out the call stack from the result
+                        # text_call_stack_depth = compounded_result.count("<function-result>") + compounded_result.count("<function-error>")
+                        # if len(call_stack) != text_call_stack_depth:
+                        #     print("warn: call stack length mismatch: ", len(call_stack), text_call_stack_depth)
+                        # if text_call_stack_depth > 0:
+                        #     compounded_result = compounded_result.split("</call-stack>")[1]
+                        yield "success", compounded_result
+                    else:
                         print("warn: empty response")
                         yield "error", "I'm sorry, I'm having trouble coming up with a response. Please try again."
-                    else:
-                        print("warn: unparsable response")
-                        yield "error", "I'm sorry, I'm having trouble understanding you. Please try again."
                 # Break out of the loop
                 break
             
@@ -512,21 +473,25 @@ class ChatBotModel():
                 yield "error", "I'm sorry, I've exceeded my function call depth. Please try again."
                 break
              
+            print("info: calling function:", function_call) 
             yield "update", "Using function call: " + function_call
-            
+
             # Parse the function call
             function_call = json.loads(function_call)
-            fn = llm_functions[function_call['name']]
+            fn = llm_functions[function_call["name"]]
 
             # call the function with the arguments
             try:
                 function_result = fn(**function_call['args'])
                 function_result = { **function_call, "result": function_result }
                 function_result = f"<function-result>{json.dumps(function_result)}</function-result>"
-                print("function result:", function_result)
+                # remove new lines from the result
+                function_result = function_result.replace("\n", "")
             except Exception as e:
                 function_error = { **function_call, "error": str(e) }
                 function_error = f"<function-error>{json.dumps(function_error)}</function-error>"
+                # remove new lines from the result
+                function_error = function_error.replace("\n", "")
                 print("warn: function error:", function_error)
                 function_result = function_error
             finally:

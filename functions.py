@@ -11,9 +11,10 @@ def add(x: int, y: int) -> int:
     return x + y
 
 def coingecko_get_price_usd(coin: str) -> dict:
-    """Get the USD price of a coin from coingecko.
+    """Get the up to date USD price of a cryptocurrency from CoinGecko.
+        Use this whenever you are asked to provide a price for a coin.
     Args:
-        coin (str): The coin ticker.
+        coin (str): The coin symbol to get the price of (e.g. "btc", "eth", "doge", "aleph", etc.).
     Returns:
         dict: The price of the coin of the form {"coin": {"usd": price}} if the coin exists, None otherwise.
     """
