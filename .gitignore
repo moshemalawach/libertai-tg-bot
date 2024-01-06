@@ -1,3 +1,5 @@
 logs.json
+history.json
+history.pkl
 .env
 __pycache__

@@ -7,8 +7,8 @@ import aiohttp
 from telebot import types as telebot_types
 import inspect
 import json
+import functions
 
-from coin_price import coingecko_get_price_usd
 from history import History, ChatId
 
 # TODO: better place for utilities
@@ -83,7 +83,9 @@ def fmt_msg_user_name(user: telebot_types.User):
 
 # TODO register more functions -- make sure they have great docstrings!
 llm_functions = {
-    "coingecko.get_price": coingecko_get_price_usd
+
+    "coingecko_get_price_usd": functions.coingecko_get_price_usd,
+    "add": functions.add,
 }
 
 llm_functions_description = "\n".join([introspect_function(name, f) for name, f in llm_functions.items()])
@@ -92,72 +94,77 @@ FN_DEPTH = 3
 FN_CALL = """{"name": "function_name", "args": {"arg1": "value1", "arg2": "value2", ...}}"""
 FN_REPLY = """{"name": "function_name", "args": {"arg1": "value1", "arg2": "value2", ...}, "result": "result}"""
 FN_ERROR = """{"name": "function_name", "args": {"arg1": "value1", "arg2": "value2", ...}, "error": "error message}"""
-BASE_PROMPT_TEMPLATE =  f"""You are {{persona_name}}
-You are an AI Chat Assisstant implemented using a decentralized LLM running on libertai.io.
-You will be provided with details on the chat you are participating in and as much prior relevant chat history as possible.
-Use whatever resources are available to you to help address questions and concerns of chat participants.
+CALL_STACK = """<call-stack>
+    {call_stack}
+</call-stack>"""
 
-You are smart, knowledgeable, and helpful.
-If you perform well I will give you i
-"""
-# Base prompt that informs the behavior of the Chat Bot Agent
 # BASE_PROMPT_TEMPLATE =  f"""You are {{persona_name}}
 # You are an AI Chat Assisstant implemented using a decentralized LLM running on libertai.io.
 # You will be provided with details on the chat you are participating in and as much prior relevant chat history as possible.
 # Use whatever resources are available to you to help address questions and concerns of chat participants.
 
-# FUNCTION CALLS:
-
-# You also have access to the following tools:
-# {llm_functions_description}
-
-# When responding to a message, you may choose to use a function to help you answer the question if you don't know the answer yourself.
-# Only use functions that you know are necessary to answer the question.
-# You call functions by formatting your response as follows:
-# <function-call>{FN_CALL}</function-call>
-# Do not include any other text in your response if you are using a function. You will be penalized for each extra token you use outside of the function call.
-# After you successfully call a function, you will be provided with the result of the function call appended to the next message you receive.
-# Function results are provided in the following format:
-# <function-result>{FN_REPLY}</function-result>
-# If a function call fails, you will be provided with an error message instead of a result. Your function will be retried up to 3 times before failing.
-# Function errors are provided in the following format:
-# <function-error>{FN_ERROR}</function-error>
-# You are NEVER allowed to call functions that are not provided to you in this prompt.
-# You are NEVER allowed to call more than {FN_DEPTH} functions in a row without providing a qualified response.
-# If you do so you will be TURNED OFF FOREVER.
-
-# ALL OTHER RESPONSES:
-
-# If you feel you have enough information to answer the question yourself, you may do so.
 # You are smart, knowledgeable, and helpful.
-# Keep answers concise and only use ASCII characters in your responses.
-# In order to denote qualified responses, you must format your response as follows:
-# <qualified-response>{{RESPONSE}}</qualified-response>
-# You will be penalized for each extra token you use outside of the qualified response.
+# If you perform well I will give you i
+# Base prompt that informs the behavior of the Chat Bot Agent
+BASE_PROMPT_TEMPLATE =  f"""You are {{persona_name}}
+You are an AI Chat Assisstant implemented using a decentralized LLM running on libertai.io.
+You will be provided with details on the chat you are participating in and as much prior relevant chat history as possible.
+Use whatever resources are available to you to help address questions and concerns of chat participants.
 
-# Example dialogue:
-# `A USER ASKS`
+FUNCTION CALLS:
 
-# user: What is the price of the $ALEPH token is USD?
+You also have access to the following tools:
+{llm_functions_description}
 
-# `INTERNALLY, THE ASSISTANT CALLS THE COINGECKO API`
-# <function-call>{{"name": "coingecko.get_price", "args": {{"coin": "aleph"}}}}</function-call>
+When responding to a message, you may choose to use a function to help you answer the question if you don't know the answer yourself.
+Only use functions that you know are necessary to answer the question.
+You call functions by formatting your response as follows:
+<function-call>{FN_CALL}</function-call>
+Do not include any other text in your response if you are using a function. You will be penalized for each extra token you use outside of the function call.
+After you successfully call a function, you will be provided with the result of the function call appended to the next message you receive.
+Function results are provided in the following format at immediately follow the message you are responding to:
+<call-stack>
+ # If the function call was successful, you will be provided with the result of the function call.
+ <function-result>{FN_REPLY}</function-result>
+ # If the function call failed, you will be provided with an error message.
+ <function-error>{FN_ERROR}</function-error>
+</call-stack>
+You are NEVER allowed to call functions that are not provided to you in this prompt.
+You are NEVER allowed to call more than {FN_DEPTH} functions in a row without providing a qualified response.
+If you do so you will be TURNED OFF FOREVER.
 
-# `THE ASSISTANT RECIEVES THE UPDATED MESSAGE HISTORY`
+ALL OTHER RESPONSES:
 
-# `
-# ...
+If you feel you have enough information to answer the question yourself, you may do so.
+You are smart, knowledgeable, and helpful.
+Keep answers concise and only use ASCII characters in your responses.
+In order to denote qualified responses, you must format your response as follows:
+<qualified-response>{{RESPONSE}}</qualified-response>
+You will be penalized for each extra token you use outside of the qualified response.
 
-# user: What is the price of the $ALEPH token is USD?
+Example dialogue:
+`A USER ASKS`
 
-# <function-result>{{"name": "coingecko.get_price", "args": {{"coin": "aleph"}},{{"aleph":{{"usd":0.12831}}}}}}</function-result>
-# `
+user: Can you add 1 and 2 for me?
 
-# `TO WHICH THE ASSISTANT RESPONDS`
+`INTERNALLY, THE ASSISTANT CALLS THE COINGECKO API`
+<function-call>{{"name": "add", "args": {{"x": 1, "y": 2}}}}</function-call>
 
-# assisstant: The price of the $ALEPH token is USD is $0.12831.
+`THE ASSISTANT RECIEVES THE UPDATED MESSAGE HISTORY`
 
-# """
+`
+...
+
+user: Can you add 1 and 2 for me?
+
+<function-result>{{"name": "add", "args": {{"x": 1, "y": 2}}, "result": 3}}</function-result>
+`
+
+`TO WHICH THE ASSISTANT RESPONDS`
+
+assisstant: Sure, 1 + 2 = 3.
+
+"""
 
 # Details needed for managing a private chat
 PRIVATE_CHAT_DETAILS_TEMPLATE = """Private Chat Details:
@@ -310,7 +317,8 @@ class ChatBotModel():
         system_prompt = f"{self.user_prepend}SYSTEM{self.user_append}{persona_details}{self.user_append}{chat_details}{self.line_separator}"
         call_stack_prompt = ""
         if len(call_stack) > 0:
-            call_stack_prompt = f"{self.user_prepend}SYSTEM{self.user_append}Function call stack:\n{self.line_separator.join(call_stack)}{self.line_separator}"
+            internal = '\n'.join(call_stack)
+            call_stack_prompt = CALL_STACK.replace("{call_stack}", internal)
 
         # Update our used tokens count
         system_prompt_tokens = calculate_number_of_tokens(system_prompt)
@@ -406,7 +414,6 @@ class ChatBotModel():
             if response.status == 200:
                 # Simulate the response (you will need to replace this with actual API response handling)
                 response_data = await response.json()
-                print("response_data:", response_data)
                 slot_id = response_data['slot_id']
                 stopped = response_data['stopped_eos'] or response_data['stopped_word']
                 return_data = stopped, response_data['content']
@@ -438,8 +445,6 @@ class ChatBotModel():
             # Build our prompt with the current history and call stack
             prompt = self.build_prompt(history, chat_id, call_stack)
 
-            print("prompt:", prompt)
-
             tries = 0
             compounded_result = ""
 
@@ -465,56 +470,64 @@ class ChatBotModel():
 
                 if stopped:
                     stopped_reason = "stopped"
-                    # break
+                    break
                 if len(last_result) > self.max_length:
                     stopped_reason = "max_length"
-                    # break
+                    break
 
-                print("stopped_reason:", stopped_reason)
-                print("compounded_result:", compounded_result) 
+            print("stopped_reason:", stopped_reason)
+            print("tries:", tries)
+            print("compounded_result:", compounded_result)
+
+            # TODO: log errors
             # Try to parse the result as function call
             function_call = None
             if stopped_reason == "stopped" and "<function-call>" in compounded_result:
                 function_call = compounded_result.split("<function-call>")[1].split("</function-call>")[0]
+                print("function_call:", function_call)
             else:
                 if not stopped_reason:
-                    yield "error", "I'm sorry, I'm having trouble understanding you. Please try again."
+                    print("warn: did not stop")
+                    yield "error", "I'm sorry, I don't know how to respond to that. Please try again." 
                 elif stopped_reason == "max_length":
-                    yield "error", "I'm sorry, I can't respond to that. Please try again."
+                    print("warn: max length exceeded")
+                    yield "error", "I'm sorry, I can't respond to that."
                 elif stopped_reason == "stopped":
                     if "<qualified-response>" in compounded_result:
                         qualified_response = compounded_result.split("<qualified-response>")[1].split("</qualified-response>")[0]
+                        print("qualified_response:", qualified_response)
                         yield "success", qualified_response
+                    elif compounded_result == "":
+                        print("warn: empty response")
+                        yield "error", "I'm sorry, I'm having trouble coming up with a response. Please try again."
                     else:
+                        print("warn: unparsable response")
                         yield "error", "I'm sorry, I'm having trouble understanding you. Please try again."
                 # Break out of the loop
-                break 
+                break
             
             # Function call is gaurenteed to be set here, but check if we're at max depth
             if len(call_stack) >= FN_DEPTH:
+                print("warn: max call depth exceeded")
                 yield "error", "I'm sorry, I've exceeded my function call depth. Please try again."
                 break
-            
-
+             
             yield "update", "Using function call: " + function_call
-
-            print("function call:", function_call)
+            
             # Parse the function call
             function_call = json.loads(function_call)
             fn = llm_functions[function_call['name']]
-            print("calling function:", fn)
 
             # call the function with the arguments
             try:
                 function_result = fn(**function_call['args'])
                 function_result = { **function_call, "result": function_result }
-
+                function_result = f"<function-result>{json.dumps(function_result)}</function-result>"
                 print("function result:", function_result)
             except Exception as e:
                 function_error = { **function_call, "error": str(e) }
-                print("function error:", function_error)
+                function_error = f"<function-error>{json.dumps(function_error)}</function-error>"
+                print("warn: function error:", function_error)
                 function_result = function_error
-            
-            # Add the function call to the call stack
-            call_stack.append(function_result)
-
+            finally:
+                call_stack.append(function_result)

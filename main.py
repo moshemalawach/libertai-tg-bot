@@ -111,20 +111,14 @@ async def handle_private_text_messages(message: telebot_types.Message):
     result = "Bot is thinking..."
     reply = await BOT.reply_to(message, result)
 
-    history_append = False
-    async for yield_result in CHAT_BOT_MODEL.yield_response(HISTORY, chat_id):
-        # TODO: what is this controlling?
-        got_null = (yield_result.strip('\n').strip().strip('"') == "NULL")
-        if got_null: break
-        history_append = True
-        if yield_result != result and yield_result != "":
-            result = yield_result
+    async for (code, content) in CHAT_BOT_MODEL.yield_response(HISTORY, chat_id):
+        print(f"code: {code}, content: {content}")
+
+        if content != result:
+            result = content
             reply = await BOT.edit_message_text(chat_id=message.chat.id, message_id=reply.message_id, text=result)
 
-    if history_append:
-        HISTORY.add_message(reply)
-    else:
-        await BOT.edit_message_text(chat_id=message.chat.id, message_id=reply.message_id, text="I don't know how to respond to that.")
+    HISTORY.add_message(reply)
     return None
 
 # GROUP CHAT COMMANDS AND HANDLERS
