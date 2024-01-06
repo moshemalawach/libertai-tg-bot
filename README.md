@@ -34,5 +34,7 @@ https://t.me/liberchat_bot
 
 ## TODO
 [ ] - term definition
+
 [ ] - message indexing
+
 [ ] - split out chatml configuration, model tuning, and prompt building into seperate modules
