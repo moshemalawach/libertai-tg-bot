@@ -9,7 +9,7 @@ telebot.logger.setLevel(logging.INFO)
 
 from telebot import types as telebot_types, async_telebot
 from history import History, chat_id_from_message
-from chat_bot_model import ChatBotModel
+from chat_bot_agent import ChatBotAgent
 
 load_dotenv()
 TOKEN = os.getenv("TG_TOKEN")
@@ -17,7 +17,7 @@ BOT = async_telebot.AsyncTeleBot(TOKEN, colorful_logs=True)
 HISTORY = History()
 # TODO: should I need to pull the BOT name from the BOT object?
 #  or can we just configure this?
-CHAT_BOT_MODEL = ChatBotModel()
+CHAT_BOT_AGENT = ChatBotAgent()
 
 # Register Common Chat Commands here
 COMMON_COMMANDS = {
@@ -33,7 +33,6 @@ PRIVATE_CHAT_COMMANDS = {
 # Register Group Chat Commands here
 GROUP_CHAT_COMMANDS = {
     **COMMON_COMMANDS,
-    "ask": "Ask a question of the BOT",
 }
 
 """
@@ -91,56 +90,35 @@ def edit_message(message):
 # PRIVATE CHAT COMMANDS AND HANDLERS
 
 @BOT.message_handler(content_types=['text'])
-async def handle_private_text_messages(message: telebot_types.Message):
+async def handle_text_messages(message: telebot_types.Message):
     """
     Handle all text messages sent on prviate chats.
     Use the chatbot to construct an informed response
     """
 
-    # # TODO: enable check
-    # # Filter for unhandled messages
-    # if message.chat.type not in ['private']:
-    #     BOT.reply_to(message, 
-    #         "Hi there!, I'm a BOT, and I'm not programmed to handle this type of message yet.\n",
-    #         "Please engage me in a private chat or a group chat.\n"
-    #     )
-    #     return
-
     chat_id = HISTORY.add_message(message)
+    
+    if message.chat.type not in ['private']:
+        # Don't let the bot respond to all text messages in group chats
+        # Don't let it respond to messages that don't mention the bot
+        if "bot" not in message.text and CHAT_BOT_AGENT.persona_name not in message.text:
+            return None
+        # Don't let the bot respond to messages that are replies to itself
+        if (message.reply_to_message is not None) and message.reply_to_message.from_user.username == CHAT_BOT_AGENT.persona_name:
+            return None
 
     result = "Bot is thinking..."
     reply = await BOT.reply_to(message, result)
 
-    history_append = False
-    async for yield_result in CHAT_BOT_MODEL.yield_response(HISTORY, chat_id):
-        # TODO: what is this controlling?
-        got_null = (yield_result.strip('\n').strip().strip('"') == "NULL")
-        if got_null: break
-        history_append = True
-        if yield_result != result and yield_result != "":
-            result = yield_result
+    async for (code, content) in CHAT_BOT_AGENT.yield_response(HISTORY, chat_id):
+        if content != result:
+            result = content
             reply = await BOT.edit_message_text(chat_id=message.chat.id, message_id=reply.message_id, text=result)
 
-    if history_append:
-        HISTORY.add_message(reply)
-    else:
-        await BOT.edit_message_text(chat_id=message.chat.id, message_id=reply.message_id, text="I don't know how to respond to that.")
+    HISTORY.add_message(reply)
     return None
 
 # GROUP CHAT COMMANDS AND HANDLERS
-
-# TODO: ASK
-@BOT.message_handler(content_types=['text'], commands=['ask'])
-async def ask_command(message: telebot_types.Message):
-    """
-    Handle all text messages sent on group chats.
-    Use the chatbot to construct an informed response
-    """
-
-    await BOT.reply_to(message, 
-        "Hi there!, I'm a bot, and I'm not programmed to handle this type of message yet.\n",
-    )
-    return None
 
 # Run the Bot
 async def run_bot():
@@ -150,7 +128,7 @@ async def run_bot():
     me = await BOT.get_me()
     persona_name = me.username
     print(f"Bot persona name: {persona_name}")
-    CHAT_BOT_MODEL.set_persona_name(persona_name)
+    CHAT_BOT_AGENT.set_persona_name(persona_name)
 
     # Register commands for private and group chats
     await BOT.set_my_commands([
