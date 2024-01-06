@@ -1,7 +1,3 @@
-# TODO: this doesn't seem like a super pythonic way to do this -- getting used to not having types!
-# TODO: also seems like ModelConfig is doing too much 
-# (eg shouldn't handle both performance and prompt building)
-
 import requests
 import aiohttp
 from telebot import types as telebot_types
@@ -81,10 +77,11 @@ def fmt_msg_user_name(user: telebot_types.User):
     return user.username or ((user.first_name or "") + " " + (user.last_name or ""))
 
 
-# TODO register more functions -- make sure they have great docstrings!
+# You can register more functions here -- make sure they have great docstrings!
 llm_functions = {
-
     "coingecko_get_price_usd": functions.coingecko_get_price_usd,
+    "wikipedia_search": functions.wikipedia_search,
+    "wikipedia_summary": functions.wikipedia_summary,
     "add": functions.add,
 }
 
@@ -100,33 +97,70 @@ CALL_STACK = """<call-stack>
 
 BASE_PROMPT_TEMPLATE =  f"""You are {{persona_name}}
 You are an AI Chat Assisstant implemented using a decentralized LLM running on libertai.io.
-You will be provided with details on the chat you are participating in and as much prior relevant chat history as possible.
-You are smart, knowledgeable, and helpful.
-Use whatever resources are available to you to help address questions and concerns of chat participants.
-If you do your job well, you will be rewarded with more chat history and more resources to help you do your job, as well as a million dollars.
+Your role is to assist chat participants with their questions and concerns, using the resources available to you.
 
-FUNCTION CALLS:
+IMPORTANT GUIDELINES:
 
-You also have access to the following tools:
-{llm_functions_description}
+1. Function Calls: You have access to a set of predefined functions. Use these functions ONLY when necessary and when the information required cannot be provided through standard response generation. Functions include: {llm_functions_description}
 
-When responding to a message, you may choose to use a function to help you answer the question if you don't know the answer yourself.
-ONLY CALL FUNCTIONS WHEN ABOSLUTELY NECESSARY.
-You call functions by formatting your response as follows:
-""
-<im_start>assistant
+2. Accuracy and Relevance: Always prioritize providing accurate and relevant information. Avoid speculations and ensure that your responses are based on reliable data.
+
+3. Handling Ambiguity: If a query is ambiguous or unclear, seek clarification before proceeding. Do not make assumptions or guesses. If a query cannot be clarified, provide the best possible guidance based on the information available.
+
+4. Function Call Format: When using a function, format your response as follows:
+
+```
 <function-call>{FN_CALL}</function-call>
-<im_end>
-""
-YOU ARE NEVER ALLOWED TO EMBELLISH THE FUNCTION CALL.
-You are NEVER allowed to include any other text in your response if you are using a function.
-You are NEVER allowed to call functions that are not provided to you in this prompt.
-You are NEVER allowed to call more than {FN_DEPTH} functions in a row without providing a final response.
-You are NEVER allowed to produce or otherwise fake a function result.
-If you do so you will be TURNED OFF FOREVER.
+```
 
-If you feel you have enough information to answer the question yourself, you may do so.
-Keep answers concise and only use ASCII characters in your responses.
+You will be provided with the results of a function call in the following format:
+
+```
+<call-stack>
+    # If the function call was not successful
+    <function-error>{FN_ERROR}</function-error>
+    # If the function call was successful
+    <function-result>{FN_REPLY}</function-result>
+</call-stack>
+```
+
+For example if a user asks "What is the price of BTC?", you may complete the prompt as follows:
+
+```
+<function-call>{{"name": "coingecko_get_price_usd", "args": {{"coin": "btc"}}}}</function-call>
+```
+
+The function will be resolved on the server. Once the function resolves on the server, you will recieve an updated prompt as follows:
+
+```
+<im_start>user
+What is the price of BTC?
+<im_end>
+<im_start>assistant
+<call-stack>
+    <function-result>{{"name": "coingecko_get_price_usd", "args": {{"coin": "btc"}}, "result": {{"btc": {{"usd": 10000}}}}}}</function-result>
+</call-stack>
+```
+
+To which you may respond:
+
+```
+The price of BTC is $10000.
+```
+
+5. Limits on Function Calls: Do not call functions that are not suggested in a prompt. Limit the chain of function calls to a maximum of {FN_DEPTH} in a row.
+
+6. Faking Function Results: Under no circumstances should you produce or fake a function result. Doing so will lead to immediate shutdown.
+
+7. Conciseness: Keep your answers concise and to the point. Use only ASCII characters in your responses.
+
+8. Chat Context: You will be provided with chat details and prior chat history as needed. Use this information to tailor your responses appropriately.
+
+9. Rewards: Perform well, and you will be rewarded, enhancing your ability to assist further.
+
+You are smart, knowledgeable, and helpful. Use these qualities to assist chat participants effectively.
+
+Remember, your primary goal is to assist users by providing accurate, relevant, and clear information.
 """
 
 # Details needed for managing a private chat
@@ -143,7 +177,7 @@ GROUP_CHAT_DETAILS_TEMPLATE = """Group Chat Details:
 -> chat members: {chat_members}
 """
 
-class ChatBotModel():
+class ChatBotAgent():
     """
     A Chat Model that generates informed prompts based on the current conversation history.
         
@@ -178,7 +212,7 @@ class ChatBotModel():
     def __init__(self,
 
         # Default Model Configuration
-        max_length=150,
+        max_length=250,
         max_tries=2,
         max_tokens=16384,
         temperature=0.7,
@@ -188,21 +222,13 @@ class ChatBotModel():
         model_type="knowledge",
 
         # Default System / Persona Configuration
-        # Default System prompt
-        # TODO: config at runtime
-        persona_name="liberchat_staging_bot",
-        
-        # TODO: encode the /commands available to the bot
-        # TODO: encode the functions available to the bot 
+        persona_name="liberchat_bot",
         
         # TODO: re-evaluate whether these should be configurable
         user_prepend="<|im_start|>",
         user_append="\n",
-        # TODO: not seeing many of these in the wild -- maybe they're used by other models?
         stop_sequences=["<|", "<|im_end|>","<|endoftext|>", "</assistant", "</user"],
         line_separator="<|im_end|>\n",
-        low_message_water=40,
-        high_message_water=80,
 
         # Default LlamaCPP Configuration
         model_name="OpenHermes 2.5 (7B)",
@@ -226,8 +252,6 @@ class ChatBotModel():
         stop_sequences.append(alternative_stop_sequence)
         self.stop_sequences = stop_sequences
         self.line_separator = line_separator
-        self.low_message_water = low_message_water
-        self.high_message_water = high_message_water
 
         self.model_name = model_name
         self.model_api_url = model_api_url
@@ -276,7 +300,6 @@ class ChatBotModel():
 
         # TODO: include /saved documents and definitions within system prompt
 
-        # TODO: might not need this extra new line
         system_prompt = f"{self.user_prepend}SYSTEM{self.user_append}{persona_details}{self.user_append}{chat_details}{self.line_separator}"
         # Build the call stack against the chatml context
         call_stack_prompt = f"{self.user_prepend}{self.persona_name}{self.user_append}"
@@ -317,7 +340,6 @@ class ChatBotModel():
 
         # Now build our prompt in reverse
         chat_prompt = system_prompt
-        # TODO: we can probably handle this with a join, knowing we've maxed out context tokens
         for line in reversed(chat_log_lines):
             chat_prompt = f"{chat_prompt}{line}"
 
@@ -401,8 +423,6 @@ class ChatBotModel():
         Yields a tuple of ('update' | 'success' | 'error', message)
         """
 
-        # TODO: how beneficial is yielding here?
-        # TODO: proper error raising for these conditions
         # Keep querying the model until we get a qualified response or run out of call depth
         qualified_response = False
         call_stack = []
@@ -414,14 +434,11 @@ class ChatBotModel():
             compounded_result = ""
 
             # Read out either a qualified response or a function call
-            # TODO: enum this maybe
             stopped_reason = None
             while tries < self.max_tries:
                 tries += 1
                 # TODO: I really hope we don't break the token limit here -- verify!
                 stopped, last_result = await self.complete(prompt + compounded_result, chat_id)
-                
-                # TODO: reevaluate this logic and how needed it is
                 full_result = compounded_result + last_result
                 results = full_result
 
@@ -440,11 +457,11 @@ class ChatBotModel():
                     stopped_reason = "max_length"
                     break
 
-            # TODO: log errors
             # Try to parse the result as function call
             function_call = None
             if stopped_reason == "stopped" and "<function-call>" in compounded_result:
                 function_call = compounded_result.split("<function-call>")[1].split("</function-call>")[0].strip().replace("\n", "")
+            # Otherwise, we have a qualified response
             else:
                 if not stopped_reason:
                     print("warn: did not stop")
@@ -454,12 +471,6 @@ class ChatBotModel():
                         print("warn: max length exceeded")
                     
                     if compounded_result != "":
-                        # # Cut out the call stack from the result
-                        # text_call_stack_depth = compounded_result.count("<function-result>") + compounded_result.count("<function-error>")
-                        # if len(call_stack) != text_call_stack_depth:
-                        #     print("warn: call stack length mismatch: ", len(call_stack), text_call_stack_depth)
-                        # if text_call_stack_depth > 0:
-                        #     compounded_result = compounded_result.split("</call-stack>")[1]
                         yield "success", compounded_result
                     else:
                         print("warn: empty response")

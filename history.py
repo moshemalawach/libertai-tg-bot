@@ -1,4 +1,4 @@
-import pickle
+import json
 from telebot import types
 from typing import Dict, List
 
@@ -6,9 +6,8 @@ from typing import Dict, List
 # TODO: implement a way to break up chat histories so we can selectively load / dump them
 
 # Where to read / write the chat history on disk
-HISTORY_FILE = "history.pkl"
+HISTORY_FILE = "history.json"
 
-# TODO: look into whether or not we can just use the chat's int as the chat id, and not have to worry about topics
 # Let's air on the side of verbose and opinionated for chat ids
 ChatId = str
 
@@ -30,8 +29,6 @@ def chat_id_from_message(message: types.Message) -> ChatId:
     else:
         return str(message.chat.id)
 
-# TODO: definitions
-# TODO: saved messages
 class History():
     """
     An in-memory representation of a chat bot history.
@@ -39,23 +36,32 @@ class History():
     """
 
     # Map of chat_id to chat history
-    history = Dict[ChatId, List[types.Message]]
-
+    # Dict[ChatId, List[types.Message]]
+    history = {} 
+    
     def __init__(self):
         self.load()
 
     def dump(self):
         """Writes the chat history to a file.
         """
-        with open(HISTORY_FILE, "wb") as f:
-            pickle.dump(self.history, f)
+        to_write = {}
+        for chat_id, history in self.history.items():
+            to_write[chat_id] = [msg.json for msg in history]
+        with open(HISTORY_FILE, "w") as f:
+            json.dump(to_write, f)
 
     def load(self):
         """Reads the chat history from a file.
         """
         try:
-            with open(HISTORY_FILE, "rb") as f:
-                self.history = pickle.load(f)
+            history = {}
+            with open(HISTORY_FILE, "r") as f:
+                history = json.load(f)
+            for chat_id in history.keys():
+                self.history[chat_id] = [
+                    types.Message.de_json(item) for item in history[chat_id]
+                ]
         except FileNotFoundError:
             self.history = {}
 
@@ -99,7 +105,7 @@ class History():
         """
         if chat_id in self.history:
             self.history[chat_id] = []
-            self.dump()
+        self.dump()
 
     def add_message(self, message: types.Message):
         """Adds a message to its chat's history

@@ -1,4 +1,5 @@
 import requests
+import wikipedia
 
 def add(x: int, y: int) -> int:
     """Add two numbers.
@@ -32,22 +33,20 @@ def coingecko_get_price_usd(coin: str) -> dict:
     else:
         return None
 
-# TODO: implement a simple model for this
-# TODO: add proper type for ln code -- don't let the AI hallucinate if its generating this  or
-#  Provide a safe way to check that the language code is valid
-def translate(phrase: str, from_ln: str, to_ln: str) -> str:
-    """Translate a phrase from one language to another.
+def wikipedia_search(query: str) -> dict:
+    """Search Wikipedia for a query. Use this when you are unsure of the exact topic to search for.
     Args:
-        phrase (str): The phrase to translate (text to translate).
-        from_ln (str): ISO 639-1 code of the language to translate from.
-        to_ln (str): ISO 639-1 code of the language to translate to.
+        query (str): The query to search for.
     Returns:
-        translation (str): The translated phrase.
+        list: A list of the top 10 results from Wikipedia.
     """
-    # TODO: Add example of a translation LLM that can be used here
-    return "my name jeff"
+    return wikipedia.search(query)
 
-# TOOD: populate this
-class TranslateError(Exception):
-    """Base class for exceptions in this module."""
-    pass
+def wikipedia_summary(query: str) -> str:
+    """Get the summary of a Wikipedia article. Use this whenever you are asked to provide a summary for a topic.
+    Args:
+        query (str): The query to search for.
+    Returns:
+        str: The summary of the Wikipedia article.
+    """
+    return wikipedia.summary(query)
