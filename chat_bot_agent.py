@@ -5,6 +5,7 @@ import inspect
 import json
 import functions
 
+from chat_ml import USER_PREPEND, USER_APPEND, LINE_SEPARATOR, chat_message, prompt_chat_message
 from history import History, ChatId
 
 # TODO: better place for utilities
@@ -30,7 +31,7 @@ def introspect_function(function_name, func):
     return json_result
 
 
-def fmt_chat(chat: telebot_types.Chat):
+def fmt_chat_details(chat: telebot_types.Chat):
     """
     Construct appropriate chat details for the model prompt
 
@@ -61,6 +62,7 @@ def fmt_chat(chat: telebot_types.Chat):
     else:
         raise Exception("chat_details(): chat is neither private nor group")
 
+
 def calculate_number_of_tokens(line: str):
     """
     Determine the token length of a line of text
@@ -68,6 +70,7 @@ def calculate_number_of_tokens(line: str):
 
     # TODO: why are we dividing by 2.7?
     return len(line) / 2.7
+
 
 def fmt_msg_user_name(user: telebot_types.User):
     """
@@ -91,9 +94,6 @@ FN_DEPTH = 3
 FN_CALL = """{"name": "function_name", "args": {"arg1": "value1", "arg2": "value2", ...}}"""
 FN_REPLY = """{"name": "function_name", "args": {"arg1": "value1", "arg2": "value2", ...}, "result": "result}"""
 FN_ERROR = """{"name": "function_name", "args": {"arg1": "value1", "arg2": "value2", ...}, "error": "error message}"""
-CALL_STACK = """<call-stack>
-    {call_stack}
-</call-stack>"""
 
 BASE_PROMPT_TEMPLATE =  f"""You are {{persona_name}}
 You are an AI Chat Assisstant implemented using a decentralized LLM running on libertai.io.
@@ -191,13 +191,8 @@ class ChatBotAgent():
     - top_k: The top k value.
     - model_type: The type of the model.
 
-    System / Persona Configuration
+    # Persona Configuration
     - persona_name: The name of the persona for the model. Should correspond to the bot's username!
-    # TODO: imo these should be opionated / non-configurable
-    - user_prepend: The prepend for the user within the chat context.
-    - user_append: The append for the user within the chat context.
-    - stop_sequences: The stop sequences for the model to stop generating text.
-    - line_separator: The line separator for the model to use.
 
     # TODO: re-enable other engines
     LlamaCPP Server Configuration
@@ -210,7 +205,6 @@ class ChatBotAgent():
     
 
     def __init__(self,
-
         # Default Model Configuration
         max_length=250,
         max_tries=2,
@@ -224,12 +218,6 @@ class ChatBotAgent():
         # Default System / Persona Configuration
         persona_name="liberchat_bot",
         
-        # TODO: re-evaluate whether these should be configurable
-        user_prepend="<|im_start|>",
-        user_append="\n",
-        stop_sequences=["<|", "<|im_end|>","<|endoftext|>", "</assistant", "</user"],
-        line_separator="<|im_end|>\n",
-
         # Default LlamaCPP Configuration
         model_name="OpenHermes 2.5 (7B)",
         model_api_url="https://curated.aleph.cloud/vm/cb6a4ae6bf93599b646aa54d4639152d6ea73eedc709ca547697c56608101fc7/completion",
@@ -246,12 +234,6 @@ class ChatBotAgent():
         self.model_type = model_type
 
         self.persona_name = persona_name
-        self.user_prepend = user_prepend
-        self.user_append = user_append
-        alternative_stop_sequence = f"{user_prepend}{persona_name}:"
-        stop_sequences.append(alternative_stop_sequence)
-        self.stop_sequences = stop_sequences
-        self.line_separator = line_separator
 
         self.model_name = model_name
         self.model_api_url = model_api_url
@@ -260,6 +242,12 @@ class ChatBotAgent():
 
         # TODO: slots as part of state
         self.model_chat_slots = {}
+
+    def stop_sequences(self):
+        """
+        Get the stop sequences for the model to stop generating text.
+        """
+        return [f"{USER_PREPEND}{self.persona_name}{LINE_SEPARATOR}", USER_APPEND]
 
     def build_prompt(
         self,
@@ -296,17 +284,15 @@ class ChatBotAgent():
         # determine what details to provide about the chat
         message = history.get_chat_last_message(chat_id)
         chat = message.chat
-        chat_details = fmt_chat(chat)
+        chat_details = fmt_chat_details(chat)
 
         # TODO: include /saved documents and definitions within system prompt
 
-        system_prompt = f"{self.user_prepend}SYSTEM{self.user_append}{persona_details}{self.user_append}{chat_details}{self.line_separator}"
-        # Build the call stack against the chatml context
-        call_stack_prompt = f"{self.user_prepend}{self.persona_name}{self.user_append}"
+        system_prompt = chat_message("SYSTEM", persona_details + LINE_SEPARATOR + chat_details) + LINE_SEPARATOR
+        call_stack_prompt = prompt_chat_message(self.persona_name, "")
         if len(call_stack) > 0:
-            internal = '\n'.join(call_stack)
-            call_stack = CALL_STACK.replace("{call_stack}", internal)
-            call_stack_prompt = f"{call_stack_prompt}{call_stack}"
+            for call in call_stack:
+                call_stack_prompt = f"{call_stack_prompt}{call}{LINE_SEPARATOR}"
 
         # Update our used tokens count
         system_prompt_tokens = calculate_number_of_tokens(system_prompt)
@@ -326,13 +312,14 @@ class ChatBotAgent():
             # TODO:this is a good place to extract args from /ask commands
             if is_reply:
                 to_user_name = fmt_msg_user_name(message.reply_to_message.from_user)
-                line = f"{self.user_prepend}{from_user_name} (in reply to {to_user_name}){self.user_append}{message.text}\n{self.line_separator}"
+                line = chat_message(f"{from_user_name} (in reply to {to_user_name})", message.text)
             else:
-                line = f"{self.user_prepend}{from_user_name}{self.user_append}{message.text}\n{self.line_separator}"
+                line = chat_message(from_user_name, message.text)
+            line = f"{line}{LINE_SEPARATOR}"
 
             additional_tokens = calculate_number_of_tokens(line)
             # Break if this would exceed our token limit before appending to the log
-            if (used_tokens + additional_tokens > self.max_tokens):
+            if used_tokens + additional_tokens > self.max_tokens:
                 break
             used_tokens += additional_tokens
             chat_log_lines.append(line)
@@ -391,7 +378,7 @@ class ChatBotAgent():
             "cache_prompt": True,
             "typical_p": 1,
             "tfs_z": 1,
-            "stop": self.stop_sequences,
+            "stop": self.stop_sequences(),
             "use_default_badwordsids": False
         })
 
@@ -433,6 +420,8 @@ class ChatBotAgent():
             tries = 0
             compounded_result = ""
 
+            print("info: prompt:", prompt)
+
             # Read out either a qualified response or a function call
             stopped_reason = None
             while tries < self.max_tries:
@@ -442,13 +431,15 @@ class ChatBotAgent():
                 full_result = compounded_result + last_result
                 results = full_result
 
-                for stop_seq in self.stop_sequences:
+                for stop_seq in self.stop_sequences():
                     results = "|||||".join(results.split(f"\n{stop_seq}"))
                     results = "|||||".join(results.split(f"{stop_seq}"))
 
                 results = results.split("|||||")
                 first_message = results[0].rstrip()
                 compounded_result = first_message
+
+                print("info: result:", first_message)
 
                 if stopped:
                     stopped_reason = "stopped"
