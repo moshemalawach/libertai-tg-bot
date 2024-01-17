@@ -1,8 +1,9 @@
-import os
-import telebot
 import asyncio
-from dotenv import load_dotenv
 import logging
+import os
+
+import telebot
+from dotenv import load_dotenv
 
 logger = telebot.logger
 telebot.logger.setLevel(logging.INFO)
@@ -43,7 +44,9 @@ It's also annoyting that I can't control state or pass arguments to the handlers
 a global variable to control the active prompt and model too...
 """
 
+
 # COMMON COMMANDS AND HANDLERS
+
 
 @BOT.message_handler(commands=['help'])
 async def help_command(message: telebot_types.Message):
@@ -65,6 +68,7 @@ async def help_command(message: telebot_types.Message):
     await BOT.reply_to(message, help_text)
     return None
 
+
 @BOT.message_handler(commands=['clear'])
 async def clear_command(message: telebot_types.Message):
     """
@@ -82,69 +86,83 @@ async def clear_command(message: telebot_types.Message):
 @BOT.edited_message_handler(content_types=['text'])
 def edit_message(message):
     """
-    Handle edits to text messages sent too all chats.
+    Handle edits to text messages sent to all chats.
     """
     # TODO: evaluate safety of this / invariants / side effects
     HISTORY.update_message(message)
 
+
 # PRIVATE CHAT COMMANDS AND HANDLERS
+
 
 @BOT.message_handler(content_types=['text'])
 async def handle_text_messages(message: telebot_types.Message):
     """
-    Handle all text messages sent on prviate chats.
+    Handle all text messages sent on private chats.
     Use the chatbot to construct an informed response
     """
 
     chat_id = HISTORY.add_message(message)
-    
+
     if message.chat.type not in ['private']:
         # Don't let the bot respond to all text messages in group chats
         # Don't let it respond to messages that don't mention the bot
         if "bot" not in message.text and CHAT_BOT_AGENT.persona_name not in message.text:
             return None
         # Don't let the bot respond to messages that are replies to itself
-        if (message.reply_to_message is not None) and message.reply_to_message.from_user.username == CHAT_BOT_AGENT.persona_name:
+        if (
+                message.reply_to_message is not None) and message.reply_to_message.from_user.username == CHAT_BOT_AGENT.persona_name:
             return None
 
     result = "Bot is thinking..."
     reply = await BOT.reply_to(message, result)
 
-    async for (code, content) in CHAT_BOT_AGENT.yield_response(HISTORY, chat_id):
-        if content != result:
-            result = content
-            reply = await BOT.edit_message_text(chat_id=message.chat.id, message_id=reply.message_id, text=result)
-
+    try:
+        async for (code, content) in CHAT_BOT_AGENT.yield_response(HISTORY, chat_id):
+            if content != result:
+                result = content
+                reply = await BOT.edit_message_text(chat_id=message.chat.id, message_id=reply.message_id, text=result)
+    except Exception as e:
+        print("An unexpected error occurred: ", e)
+        await BOT.edit_message_text(chat_id=message.chat.id, message_id=reply.message_id, text="Bot is confused, please try again.")
     HISTORY.add_message(reply)
     return None
 
+
 # GROUP CHAT COMMANDS AND HANDLERS
+
 
 # Run the Bot
 async def run_bot():
     print("Starting Bot...")
+    try:
+        # Set the persona name for the bot
+        me = await BOT.get_me()
+        persona_name = me.username
+        print(f"Bot persona name: {persona_name}")
+        CHAT_BOT_AGENT.set_persona_name(persona_name)
 
-    # Set the persona name for the bot
-    me = await BOT.get_me()
-    persona_name = me.username
-    print(f"Bot persona name: {persona_name}")
-    CHAT_BOT_AGENT.set_persona_name(persona_name)
+        # Register commands for private and group chats
+        await BOT.set_my_commands([
+            telebot_types.BotCommand(command, description)
+            for command, description in PRIVATE_CHAT_COMMANDS.items()
+        ], scope=telebot_types.BotCommandScopeAllPrivateChats())
+        # Set commands for private chats
+        await BOT.set_my_commands([
+            telebot_types.BotCommand(command, description)
+            for command, description in GROUP_CHAT_COMMANDS.items()
+        ], scope=telebot_types.BotCommandScopeAllGroupChats())
 
-    # Register commands for private and group chats
-    await BOT.set_my_commands([
-        telebot_types.BotCommand(command, description)
-        for command, description in PRIVATE_CHAT_COMMANDS.items()
-    ], scope=telebot_types.BotCommandScopeAllPrivateChats())
-    # Set commands for private chats
-    await BOT.set_my_commands([
-        telebot_types.BotCommand(command, description)
-        for command, description in GROUP_CHAT_COMMANDS.items()
-    ], scope=telebot_types.BotCommandScopeAllGroupChats())
-    
-    # Start the BOT
-    print("Bot started.")
-    await BOT.polling()
-    
+        # Start the BOT
+        print("Bot started.")
+        await BOT.polling()
+    except Exception as e:
+        print("An unexpected error occurred: ", e)
+    finally:
+        print("Stopping Bot...")
+        await CHAT_BOT_AGENT.close_sessions()
+        print("Bot stopped.")
+
+
 if __name__ == '__main__':
     asyncio.run(run_bot())
-

@@ -1,19 +1,21 @@
-import requests
-import aiohttp
-from telebot import types as telebot_types
 import inspect
 import json
-import functions
+import re
 
+import aiohttp
+from telebot import types as telebot_types
+
+import functions
 from chat_ml import USER_PREPEND, USER_APPEND, LINE_SEPARATOR, chat_message, prompt_chat_message
 from history import History, ChatId
 
+
 # TODO: better place for utilities
 def introspect_function(function_name, func):
-
     # Get function arguments
     signature = inspect.signature(func)
-    arguments = [{'name': param.name, 'default': param.default is not inspect._empty and param.default or None} for param in signature.parameters.values()]
+    arguments = [{'name': param.name, 'default': param.default is not inspect._empty and param.default or None} for
+                 param in signature.parameters.values()]
 
     # Get function docstring
     docstring = inspect.getdoc(func)
@@ -27,7 +29,7 @@ def introspect_function(function_name, func):
 
     # Convert the dictionary to JSON
     json_result = json.dumps(function_info, indent=2)
-    
+
     return json_result
 
 
@@ -47,18 +49,18 @@ def fmt_chat_details(chat: telebot_types.Chat):
 
     # TODO: some of these are only called on .getChat, these might not be available. Verify!
     if chat.type in ['private']:
-        return PRIVATE_CHAT_DETAILS_TEMPLATE\
-            .replace("{user_username}", chat.username or "")\
-            .replace("{user_first_name}", chat.first_name or "")\
-            .replace("{user_last_name}", chat.last_name or "")\
+        return PRIVATE_CHAT_DETAILS_TEMPLATE \
+            .replace("{user_username}", chat.username or "") \
+            .replace("{user_first_name}", chat.first_name or "") \
+            .replace("{user_last_name}", chat.last_name or "") \
             .replace("{user_bio}", chat.bio or "")
 
     elif chat.type in ['group', 'supergroup']:
-        return GROUP_CHAT_DETAILS_TEMPLATE\
-            .replace("{chat_title}", chat.title or "")\
-            .replace("{chat_description}", chat.description or "")\
+        return GROUP_CHAT_DETAILS_TEMPLATE \
+            .replace("{chat_title}", chat.title or "") \
+            .replace("{chat_description}", chat.description or "") \
             .replace("{chat_members}", chat.active_usernames or "")
-    
+
     else:
         raise Exception("chat_details(): chat is neither private nor group")
 
@@ -94,8 +96,9 @@ FN_DEPTH = 3
 FN_CALL = """{"name": "function_name", "args": {"arg1": "value1", "arg2": "value2", ...}}"""
 FN_REPLY = """{"name": "function_name", "args": {"arg1": "value1", "arg2": "value2", ...}, "result": "result}"""
 FN_ERROR = """{"name": "function_name", "args": {"arg1": "value1", "arg2": "value2", ...}, "error": "error message}"""
+BOT_NOTE = """{"note": "note message"}"""
 
-BASE_PROMPT_TEMPLATE =  f"""You are {{persona_name}}
+BASE_PROMPT_TEMPLATE = f"""You are {{persona_name}}
 You are an AI Chat Assisstant implemented using a decentralized LLM running on libertai.io.
 Your role is to assist chat participants with their questions and concerns, using the resources available to you.
 
@@ -116,36 +119,12 @@ IMPORTANT GUIDELINES:
 You will be provided with the results of a function call in the following format:
 
 ```
-<call-stack>
-    # If the function call was not successful
-    <function-error>{FN_ERROR}</function-error>
-    # If the function call was successful
-    <function-result>{FN_REPLY}</function-result>
-</call-stack>
-```
-
-For example if a user asks "What is the price of BTC?", you may complete the prompt as follows:
-
-```
-<function-call>{{"name": "coingecko_get_price_usd", "args": {{"coin": "btc"}}}}</function-call>
-```
-
-The function will be resolved on the server. Once the function resolves on the server, you will recieve an updated prompt as follows:
-
-```
-<im_start>user
-What is the price of BTC?
-<im_end>
-<im_start>assistant
-<call-stack>
-    <function-result>{{"name": "coingecko_get_price_usd", "args": {{"coin": "btc"}}, "result": {{"btc": {{"usd": 10000}}}}}}</function-result>
-</call-stack>
-```
-
-To which you may respond:
-
-```
-The price of BTC is $10000.
+# The function call
+<function-call>{FN_CALL}</function-call>
+# If the function call was not successful
+<function-error>{FN_ERROR}</function-error>
+# If the function call was successful
+<function-result>{FN_REPLY}</function-result>
 ```
 
 5. Limits on Function Calls: Do not call functions that are not suggested in a prompt. Limit the chain of function calls to a maximum of {FN_DEPTH} in a row.
@@ -161,6 +140,26 @@ The price of BTC is $10000.
 You are smart, knowledgeable, and helpful. Use these qualities to assist chat participants effectively.
 
 Remember, your primary goal is to assist users by providing accurate, relevant, and clear information.
+
+EXAMPLE CONVERSATION:
+
+```
+user: hi bot how are you today?
+assistant: I am fine, thank you. How can I help you today?
+user: what is the current price of bitcoin?
+assistant:
+<function-call>{{"name": "coingecko_get_price_usd", "args": {{"coin": "btc"}}}}</function-call>
+<function-result>{{"name": "coingecko_get_price_usd", "args": {{"coin": "btc"}}, "result": {{"btc": {{"usd": 10000}}}}}}</function-result>
+The price of BTC is $10000.
+user: cool, thanks. Can you tell me what the capital of Bagladesh is?
+assistant: The capital of Bangladesh is Dhaka.
+user: can you research for me the total population of Bangladesh?
+assistant:
+<function-call>{{"name": "wikipedia_summary", "args": {{"query": "Bangladesh"}}}}</function-call>
+<function-result>{{"name": "wikipedia_summary", "args": {{"query": "Bangladesh"}}, "result": "Bangladesh (; Bengali: বাংলাদেশ [ˈbaŋlaˌdeʃ] ), officially the People's Republic of Bangladesh, is a country in South Asia. It is the eighth-most populous country in the world and is among the most densely populated countries with a population of nearly 170 million in an area of 148,460 square kilometres (57,320 sq mi).Bangladesh shares land borders with India to the west, north, and east, and Myanmar to the southeast; to the south, it has a coastline along the Bay of Bengal. It is narrowly separated from Bhutan and Nepal by the Siliguri Corridor and from China by the Indian state of Sikkim in the north. Dhaka, the capital and largest city, is the nation's political, financial, and cultural centre. Chittagong, the second-largest city, is the busiest port on the Bay of Bengal. The official language is Bengali.\nBangladesh forms the sovereign part of the historic and ethnolinguistic region of Bengal, which was divided during the Partition of India in 1947. The country has a Bengali Muslim majority. Ancient Bengal was known as Gangaridai and was a bastion of pre-Islamic kingdoms. Muslim conquests after 1204 heralded the sultanate and Mughal periods, during which an independent Bengal Sultanate and a wealthy Mughal Bengal transformed the region into an important centre of regional affairs, trade, and diplomacy. After 1757, Bengal's administrative jurisdiction reached its greatest extent under the Bengal Presidency of the British Empire. The creation of Eastern Bengal and Assam in 1905 set a precedent for the emergence of Bangladesh. In 1940, the first Prime Minister of Bengal, A. K. Fazlul Huq, supported the Lahore Resolution. Before the partition of Bengal, a Bengali sovereign state was first proposed by premier H. S. Suhrawardy. A referendum and the announcement of the Radcliffe Line established the present-day territorial boundary.\nIn 1947, East Bengal became the most populous province in the Dominion of Pakistan. It was renamed as East Pakistan, with Dhaka becoming the country's legislative capital. The Bengali Language Movement in 1952; the East Bengali legislative election, 1954; the 1958 Pakistani coup d'état; the six point movement of 1966; and the 1970 Pakistani general election resulted in the rise of Bengali nationalism and pro-democracy movements. The refusal of the Pakistani military junta to transfer power to the Awami League, led by Sheikh Mujibur Rahman, led to the Bangladesh Liberation War in 1971. The Mukti Bahini, aided by India, waged a successful armed revolution. The conflict saw the Bangladesh genocide and the massacre of pro-independence Bengali civilians, including intellectuals. The new state of Bangladesh became the first constitutionally secular state in South Asia in 1972. Islam was declared the state religion in 1988. In 2010, the Bangladesh Supreme Court reaffirmed secular principles in the constitution.A middle power in the Indo-Pacific, Bangladesh is home to the sixth-most spoken language in the world, the third-largest Muslim-majority population in the world, and the second-largest economy in South Asia. It maintains the third-largest military in the region and is the largest contributor of personnel to UN peacekeeping operations. Bangladesh is a unitary parliamentary republic based on the Westminster system. Bengalis make up 99% of the total population. The country consists of eight divisions, 64 districts and 495 subdistricts, as well as the world's largest mangrove forest. It hosts one of the largest refugee populations in the world due to the Rohingya genocide. Bangladesh faces many challenges, particularly corruption, political instability, overpopulation and effects of climate change. Bangladesh has been a leader within the Climate Vulnerable Forum. It hosts the headquarters of BIMSTEC. It is a founding member of the SAARC, as well as a member of the Organization of Islamic Cooperation and the Commonwealth of Nations."}}</function-result>
+The population of Bangladesh is 170 million people.
+user: thanks!
+```
 """
 
 # Details needed for managing a private chat
@@ -176,6 +175,7 @@ GROUP_CHAT_DETAILS_TEMPLATE = """Group Chat Details:
 -> chat description: {chat_description}
 -> chat members: {chat_members}
 """
+
 
 class ChatBotAgent():
     """
@@ -202,28 +202,27 @@ class ChatBotAgent():
     - model_engine: The engine to use for the model.
     - model_context_slots: A map of context slots for the model to use. Keep one slot per chat_id.
     """
-    
 
     def __init__(self,
-        # Default Model Configuration
-        max_length=250,
-        max_tries=2,
-        max_tokens=16384,
-        temperature=0.7,
-        sampler_order=[6, 0, 1, 3, 4, 2, 5],
-        top_p=0.9,
-        top_k=40,
-        model_type="knowledge",
+                 # Default Model Configuration
+                 max_length=750,
+                 max_tries=2,
+                 max_tokens=16384,
+                 temperature=0.7,
+                 sampler_order=[6, 0, 1, 3, 4, 2, 5],
+                 top_p=0.9,
+                 top_k=40,
+                 model_type="knowledge",
 
-        # Default System / Persona Configuration
-        persona_name="liberchat_bot",
-        
-        # Default LlamaCPP Configuration
-        model_name="OpenHermes 2.5 (7B)",
-        model_api_url="https://curated.aleph.cloud/vm/cb6a4ae6bf93599b646aa54d4639152d6ea73eedc709ca547697c56608101fc7/completion",
-        model_engine="llamacpp",
-        model_pass_credentials=True,
-    ):
+                 # Default System / Persona Configuration
+                 persona_name="liberchat_bot",
+
+                 # Default LlamaCPP Configuration
+                 model_name="OpenHermes 2.5 (7B)",
+                 model_api_url="https://curated.aleph.cloud/vm/cb6a4ae6bf93599b646aa54d4639152d6ea73eedc709ca547697c56608101fc7/completion",
+                 model_engine="llamacpp",
+                 model_pass_credentials=True,
+                 ):
         self.max_length = max_length
         self.max_tries = max_tries
         self.max_tokens = max_tokens
@@ -250,10 +249,9 @@ class ChatBotAgent():
         return [f"{USER_PREPEND}{self.persona_name}{LINE_SEPARATOR}", USER_APPEND]
 
     def build_prompt(
-        self,
-        history: History,
-        chat_id: ChatId,
-        call_stack: list = []
+            self,
+            history: History,
+            chat_id: ChatId,
     ) -> [str, str]:
         """
         Build a prompt with proper context given the available
@@ -274,11 +272,11 @@ class ChatBotAgent():
         used_tokens = 0
 
         # Build our system prompt
-        
+
         # construct our base prompt
-        persona_details = BASE_PROMPT_TEMPLATE\
+        persona_details = BASE_PROMPT_TEMPLATE \
             .replace("{persona_name}", self.persona_name)
-        
+
         # TODO: prolly a concurrency issue here if we're going to call this multiple times
         #  per completiion potentially. but that is a later problem
         # determine what details to provide about the chat
@@ -289,15 +287,12 @@ class ChatBotAgent():
         # TODO: include /saved documents and definitions within system prompt
 
         system_prompt = chat_message("SYSTEM", persona_details + LINE_SEPARATOR + chat_details) + LINE_SEPARATOR
-        call_stack_prompt = prompt_chat_message(self.persona_name, "")
-        if len(call_stack) > 0:
-            for call in call_stack:
-                call_stack_prompt = f"{call_stack_prompt}{call}{LINE_SEPARATOR}"
+        chat_prompt = prompt_chat_message(self.persona_name, "")
 
         # Update our used tokens count
         system_prompt_tokens = calculate_number_of_tokens(system_prompt)
-        call_stack_prompt_tokens = calculate_number_of_tokens(call_stack_prompt)
-        used_tokens += system_prompt_tokens + call_stack_prompt_tokens
+        chat_prompt_tokens = calculate_number_of_tokens(chat_prompt)
+        used_tokens += system_prompt_tokens + chat_prompt_tokens
 
         # Continually pull and format logs from the message history
         # Do so until our token limit is completely used up
@@ -326,15 +321,15 @@ class ChatBotAgent():
             nth_last += 1
 
         # Now build our prompt in reverse
-        chat_prompt = system_prompt
+        chat_prompt_context = system_prompt
         for line in reversed(chat_log_lines):
-            chat_prompt = f"{chat_prompt}{line}"
+            chat_prompt_context = f"{chat_prompt_context}{line}"
 
         # Add the call stack prompt
-        chat_prompt = f"{chat_prompt}{call_stack_prompt}"
+        chat_prompt = f"{chat_prompt_context}{chat_prompt}"
 
-        # Done! return the formed promtp
-        return chat_prompt 
+        # Done! return the formed prompt
+        return chat_prompt
 
     def set_persona_name(self, persona_name: str):
         """
@@ -343,10 +338,10 @@ class ChatBotAgent():
         self.persona_name = persona_name
 
     async def complete(
-        self,
-        prompt: str, 
-        chat_id: str,
-        length=None
+            self,
+            prompt: str,
+            chat_id: str,
+            length=None
     ) -> [bool, str]:
         """
         Complete a prompt with the model
@@ -399,10 +394,17 @@ class ChatBotAgent():
                 print(f"Error: Request failed with status code {response.status}")
                 return True, None
 
+    async def close_sessions(self):
+        """
+        Close all open sessions
+        """
+        for session, _ in self.model_chat_slots.values():
+            await session.close()
+
     async def yield_response(
-        self,
-        history: History,
-        chat_id: ChatId
+            self,
+            history: History,
+            chat_id: ChatId
     ):
         """
         Yield a response from the model given the current chat history
@@ -411,90 +413,74 @@ class ChatBotAgent():
         """
 
         # Keep querying the model until we get a qualified response or run out of call depth
-        qualified_response = False
-        call_stack = []
-        while True:
-            # Build our prompt with the current history and call stack
-            prompt = self.build_prompt(history, chat_id, call_stack)
-
-            tries = 0
-            compounded_result = ""
-
-            print("info: prompt:", prompt)
-
-            # Read out either a qualified response or a function call
-            stopped_reason = None
-            while tries < self.max_tries:
-                tries += 1
-                # TODO: I really hope we don't break the token limit here -- verify!
-                stopped, last_result = await self.complete(prompt + compounded_result, chat_id)
-                full_result = compounded_result + last_result
-                results = full_result
-
-                for stop_seq in self.stop_sequences():
-                    results = "|||||".join(results.split(f"\n{stop_seq}"))
-                    results = "|||||".join(results.split(f"{stop_seq}"))
-
-                results = results.split("|||||")
-                first_message = results[0].rstrip()
-                compounded_result = first_message
-
-                print("info: result:", first_message)
-
-                if stopped:
-                    stopped_reason = "stopped"
-                    break
-                if len(last_result) > self.max_length:
-                    stopped_reason = "max_length"
-                    break
-
-            # Try to parse the result as function call
-            function_call = None
-            if stopped_reason == "stopped" and "<function-call>" in compounded_result:
-                function_call = compounded_result.split("<function-call>")[1].split("</function-call>")[0].strip().replace("\n", "")
-            # Otherwise, we have a qualified response
-            else:
-                if not stopped_reason:
-                    print("warn: did not stop")
-                    yield "error", "I'm sorry, I don't know how to respond to that. Please try again." 
-                else:
-                    if stopped_reason == "max_length":
-                        print("warn: max length exceeded")
-                    
-                    if compounded_result != "":
-                        yield "success", compounded_result
-                    else:
-                        print("warn: empty response")
-                        yield "error", "I'm sorry, I'm having trouble coming up with a response. Please try again."
-                # Break out of the loop
-                break
-            
-            # Function call is gaurenteed to be set here, but check if we're at max depth
-            if len(call_stack) >= FN_DEPTH:
-                print("warn: max call depth exceeded")
+        # Build our prompt with the current history and call stack
+        prompt = self.build_prompt(history, chat_id)
+        tries = 0
+        fn_calls = 0
+        compounded_result = ""
+        stopped_reason = None
+        while tries < self.max_tries:
+            # TODO: I really hope we don't break the token limit here -- add proper checks and verify!
+            stopped, last_result = await self.complete(prompt + compounded_result, chat_id)
+            # Try to extract a function call from the `last_result`
+            if "<function-call>" in last_result and fn_calls < FN_DEPTH:
+                function_call_json_str = last_result.split("<function-call>")[1].split("</function-call>")[
+                    0].strip().replace("\n", "")
+                function_call = f"<function-call>{function_call_json_str}</function-call>"
+                # Parse the function call
+                function_call_json = json.loads(function_call_json_str)
+                fn = llm_functions[function_call_json["name"]]
+                print("info: function call:", function_call_json)
+                yield "update", f"Calling function `{function_call_json['name']}` with arguments `{function_call_json['args']}`"
+                # call the function with the arguments
+                function_result = None
+                try:
+                    result = fn(**function_call_json['args'])
+                    function_result_json = {**function_call_json, "result": result}
+                    function_result = f"<function-result>{json.dumps(function_result_json)}</function-result>"
+                    # remove new lines from the result
+                    function_result = function_result.replace("\n", "")
+                    print("info: function result:", function_result)
+                except Exception as e:
+                    function_error_json = {**function_call_json, "error": str(e)}
+                    function_error = f"<function-error>{json.dumps(function_error_json)}</function-error>"
+                    function_result = function_error.replace("\n", "")
+                    print("warn: function error:", function_result)
+                finally:
+                    compounded_result = f"{compounded_result}{LINE_SEPARATOR}{function_call}{LINE_SEPARATOR}{function_result}"
+                    fn_calls += 1
+                    continue
+            elif fn_calls >= FN_DEPTH:
                 yield "error", "I'm sorry, I've exceeded my function call depth. Please try again."
+                return
+            elif "<function-result>" in last_result:
+                function_result_json_str = last_result.split("<function-result>")[1].split("</function-result>")[
+                    0].strip().replace("\n", "")
+                function_result = f"<function-result>{function_result_json_str}</function-result>"
+                last_result = f"{function_result}{LINE_SEPARATOR}<function-note>{{\"note\": \"You just fabricated a result. Please consider using a function call, instead of generating an uninformed result\"}}</function-note>"
+                stopped = False
+
+            tries += 1
+            compounded_result = compounded_result + last_result
+
+            if stopped:
+                stopped_reason = "stopped"
                 break
-             
-            print("info: calling function:", function_call) 
-            yield "update", "Using function call: " + function_call
+            if len(last_result) > self.max_length:
+                stopped_reason = "max_length"
+                break
 
-            # Parse the function call
-            function_call = json.loads(function_call)
-            fn = llm_functions[function_call["name"]]
-
-            # call the function with the arguments
-            try:
-                function_result = fn(**function_call['args'])
-                function_result = { **function_call, "result": function_result }
-                function_result = f"<function-result>{json.dumps(function_result)}</function-result>"
-                # remove new lines from the result
-                function_result = function_result.replace("\n", "")
-            except Exception as e:
-                function_error = { **function_call, "error": str(e) }
-                function_error = f"<function-error>{json.dumps(function_error)}</function-error>"
-                # remove new lines from the result
-                function_error = function_error.replace("\n", "")
-                print("warn: function error:", function_error)
-                function_result = function_error
-            finally:
-                call_stack.append(function_result)
+        if not stopped_reason:
+            print("warn: did not stop")
+            yield "error", "I'm sorry, I don't know how to respond to that. Please try again."
+        else:
+            if stopped_reason == "max_length":
+                print("warn: max length exceeded")
+            if compounded_result != "":
+                tags = ["function-call", "function-result", "function-error", "function-note"]
+                pattern = r"<(" + "|".join(tags) + r")>.*?<\/\1>"
+                clean_result = re.sub(pattern, "", compounded_result)
+                yield "success", clean_result
+            else:
+                print("warn: empty response")
+                yield "error", "I'm sorry, I'm having trouble coming up with a response. Please try again."

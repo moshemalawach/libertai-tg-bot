@@ -1,6 +1,7 @@
 import json
+from typing import List
+
 from telebot import types
-from typing import Dict, List
 
 # TODO: find a way to get around having this in memory the whole time
 # TODO: implement a way to break up chat histories so we can selectively load / dump them
@@ -11,7 +12,8 @@ HISTORY_FILE = "history.json"
 # Let's air on the side of verbose and opinionated for chat ids
 ChatId = str
 
-# NOTE: telegram groups optionally have 'topics'. 
+
+# NOTE: telegram groups optionally have 'topics'.
 #  These are not given unqiue ids so we interpret chat_ids
 #   as strs and append the topic if necessary to provide a unqiue key 
 #    in the bot's history
@@ -29,6 +31,7 @@ def chat_id_from_message(message: types.Message) -> ChatId:
     else:
         return str(message.chat.id)
 
+
 class History():
     """
     An in-memory representation of a chat bot history.
@@ -37,8 +40,8 @@ class History():
 
     # Map of chat_id to chat history
     # Dict[ChatId, List[types.Message]]
-    history = {} 
-    
+    history = {}
+
     def __init__(self):
         self.load()
 
@@ -89,7 +92,7 @@ class History():
         Returns:
             types.Message: the nth most recent message in the history if available. None if otherwise
         """
-      
+
         # Check if the history is big enough -- avoid wrapping back around
         if nth > len(self.history[chat_id]):
             return None
@@ -114,7 +117,7 @@ class History():
         Args:
             message (types.Message): The message to add to the chat history.
         """
-        chat_id = chat_id_from_message(message) 
+        chat_id = chat_id_from_message(message)
         if chat_id not in self.history:
             self.history[chat_id] = []
         self.history[chat_id].append(message)
@@ -128,7 +131,7 @@ class History():
         Args:
             message (types.Message): The message to add to the chat history.
         """
-        chat_id = chat_id_from_message(message) 
+        chat_id = chat_id_from_message(message)
         if chat_id in self.history:
             for i, msg in enumerate(self.history[chat_id]):
                 if msg.message_id == message.message_id:
