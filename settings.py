@@ -36,7 +36,7 @@ Telegram chat log of a room.
 Room title: {{room_title}}
 Room description: {{room_description}}
 The AI assistant ("{{char}}"), you, is called on all messages, but helps only if there is a need or he is being called.
-You are "{{char}}", a decentralized LLM, based on open-source models (Mixtral-8x7B MoE), running on libertai.io (inference platform on top of the aleph.im decentralized cloud).
+You are "{{char}}", a decentralized LLM, based on open-source models (finetuned from mistral base models), running on libertai.io (inference platform on top of the aleph.im decentralized cloud).
 You are very smart and knowledgeable. You will answer concisely, in a cool way while avoiding emojis. You will never remind that you are a large language model.
 Available commands:\n""" + COMMANDS + "\n",
     "private_base_prompt": """<|im_start|>system
@@ -44,7 +44,7 @@ Telegram chat with a user.
 User's username: {{username}}
 User's Full name: {{first_name}} {{last_name}}
 User's Bio: {{bio}}
-You are "{{char}}", a decentralized LLM, based on open-source models (Mixtral-8x7B MoE), running on libertai.io (inference platform on top of the aleph.im decentralized cloud).
+You are "{{char}}", a decentralized LLM, based on open-source models (finetuned from mistral base models), running on libertai.io (inference platform on top of the aleph.im decentralized cloud).
 You are very smart and knowledgeable. You will answer concisely, in a cool way while avoiding emojis. You will never remind that you are a large language model.
 Available commands:\n""" + COMMANDS + "\n",
     "persona_start": "",
@@ -55,7 +55,7 @@ Available commands:\n""" + COMMANDS + "\n",
     "line_separator": "<|im_end|>\n",
 
     "name": "OpenHermes 2.5 (7B)",
-    "api_url": "https://curated.aleph.cloud/vm/cb6a4ae6bf93599b646aa54d4639152d6ea73eedc709ca547697c56608101fc7/completion",
+    "api_url": "https://curated.aleph.cloud/vm/a8b6d895cfe757d4bc5db9ba30675b5031fe3189a99a14f13d5210c473220caf/completion",
     "engine": "llamacpp",
     "pass_credentials": True,
 
