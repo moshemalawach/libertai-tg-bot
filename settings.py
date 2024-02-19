@@ -11,6 +11,7 @@ COMMANDS = """/start - Start the bot
 /info - Show info about the bot
 /translate <text> - Translate text
 /define <word> - Define a word
+/summarize <text> - Summarize a text
 /urban <word> - Get an urban dictionary definition"""
 
 # Generate the commands dictionary
