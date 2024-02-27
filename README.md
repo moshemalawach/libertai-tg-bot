@@ -23,6 +23,8 @@ the [BotFather](https://t.me/botfather) on Telegram.
 
 After you have obtained a token, you must export a variable called `TG_TOKEN` with the token as the value at runtime.
 
+Scripts assume this variable is contained within a `.env` file at the root of this repository.
+
 ## Configuration
 
 See config.yml for the default configuration.

@@ -3,6 +3,7 @@
 
 source venv/bin/activate
 
+source .env
 export DEBUG=false
 python3 src/app.py > /dev/null 2>&1
 

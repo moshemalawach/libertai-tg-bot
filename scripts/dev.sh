@@ -2,6 +2,7 @@
 
 source venv/bin/activate
 
+source .env
 export DEBUG=true
 python3 src/app.py
 
