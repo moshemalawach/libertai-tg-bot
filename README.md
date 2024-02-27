@@ -9,7 +9,7 @@ information.
 It utilizes [Libertai's decentralized LLM API](https://libertai.io/apis/text-generation/) for generating context-aware responses to user queries.
 
 ## Requirements
-- Python3 + Pip3
+- Python3 + Pip3 + virtualenv
 
 ## Installation
 
