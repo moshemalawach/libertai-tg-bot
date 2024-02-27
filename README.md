@@ -1,4 +1,4 @@
-# Libertai Telegram Chat Bot
+# Telegram Chat Bot
 
 This is a simple Telegram Chat Bot that can be used to send messages to a Telegram group or channel.
 It utilizes a Basic AI agent in order to respond to messages sent to the bot.
@@ -6,6 +6,7 @@ It works by building up a knowledge base of messages sent to the bot and then us
 messages sent to the bot.
 It also implements a function interface for the bot to use in order to respond to messages that require further
 information.
+It utilizes [Libertai's decentralized LLM API](https://libertai.io/apis/text-generation/) for generating context-aware responses to user queries.
 
 ## Requirements
 - Python3 + Pip3
