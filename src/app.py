@@ -30,17 +30,26 @@ CHAT_BOT = ChatBot(appConfig)
 #   as well as other things that might be used to refer to the bot
 CHAT_BOT_NAME_TARGETS = [
     # Common monikers for the chat bot
-    "chatbot", "chat-bot", "chat bot", "chatbot", "chat-bot", "chat bot", "bot", "assistant", "ai",
-    # The chat bot's persona name
-    appConfig.get_config()['persona']['name'],
-    # A bunch of potential misspellings
-    appConfig.get_config()['persona']['name'].replace(" ", ""), appConfig.get_config()['persona']['name'].replace("-", ""), appConfig.get_config()['persona']['name'].replace(" ", "-"), appConfig.get_config()['persona']['name'].replace("-", " "), appConfig.get_config()['persona']['name'].replace(" ", "_"), appConfig.get_config()['persona']['name'].replace("_", " "), appConfig.get_config()['persona']['name'].replace("_", "-"), appConfig.get_config()['persona']['name'].replace("-", "_"),
-    # Missing letters at the edges of words
-    appConfig.get_config()['persona']['name'][1:], appConfig.get_config()['persona']['name'][:-1],
-    # Swapped letters at the edges of words
-    appConfig.get_config()['persona']['name'][1:] + appConfig.get_config()['persona']['name'][0], appConfig.get_config()['persona']['name'][-1] + appConfig.get_config()['persona']['name'][:-1]
-    # TODO: maybe more?
+    "chatbot", "chat-bot", "chat bot", "chatbot", "chat-bot", "chat bot", "bot", "assistant", "ai", 
 ]
+
+def populate_bot_name_targets(name: str):
+    """
+    Populate the list of chat bot name targets with the bot's name and username.
+    """
+    CHAT_BOT_NAME_TARGETS.extend([
+        # The chat bot's persona name
+        name,
+        name.lower(),
+        name.upper(),
+        # A bunch of potential misspellings
+        name.replace(" ", ""), name.replace("-", ""), name.replace(" ", "-"), name.replace("-", " "), name.replace(" ", "_"), name.replace("_", " "), name.replace("_", "-"), name.replace("-", "_"),
+        # # Missing letters at the edges of words
+        name[1:], name[:-1],
+        # Swapped letters at the edges of words
+        name[1:] + name[0], name[-1] + name[:-1]
+    ])
+
 
 # COMMON COMMANDS AND HANDLERS
 
@@ -177,16 +186,20 @@ async def handle_text_messages(message: telebot_types.Message):
     # If the message is not a private message, check if the message mentions the bot
     if message.chat.type not in ['private']:
         # Don't let the bot respond to messages which don't mention the bot
+        found = False
         for target in CHAT_BOT_NAME_TARGETS:
             if target in message.text:
+                found = True
                 break
-            else:
-                return None
+        if not found:
+            return None
         # Don't let the bot respond to messages that are replies to itself
         if (
                 message.reply_to_message is not None) and message.reply_to_message.from_user.username == CHAT_BOT.persona_name:
+            print(f"message.reply_to_message.from_user.username: {message.reply_to_message.from_user.username}")
             return None
 
+    print(f"message.text: {message.text}")
     # TODO: some sort of animation to indicate that the bot is thinking
     # Send an initial message to the user
     result = "I'm thinking..."
@@ -212,6 +225,12 @@ async def handle_text_messages(message: telebot_types.Message):
 async def run_bot():
     LOGGER.info("Starting Bot...")
     try:
+        # Get the bot's user name
+        bot_info = await BOT.get_me()
+        LOGGER.info(f"Bot started: {bot_info.username}")
+        CHAT_BOT.set_persona_name(bot_info.username)
+        populate_bot_name_targets(bot_info.username)
+
         # Register commands for private and group chats
         await BOT.set_my_commands([
             telebot_types.BotCommand(command, description)

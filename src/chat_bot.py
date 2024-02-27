@@ -94,7 +94,9 @@ class ChatBot():
         self.line_separator = config['chat_ml']['line_separator']
 
         # Persona Configuration and Templates
-        self.persona_name = config['persona']['name']
+        # TODO: better configuration handling for this
+        # self.persona_name = config['persona']['name']
+        self.persona_name = "chat-bot"
         with open(config['persona']['templates']['private_chat'], "r") as f:
             self.private_chat_template = f.read()
         with open(config['persona']['templates']['group_chat'], "r") as f:
@@ -110,6 +112,12 @@ class ChatBot():
 
         # Initialize an empty Map to track open context slots on the server
         self.model_chat_slots = {}
+
+    def set_persona_name(self, name: str):
+        """
+        Set the persona name for the chat bot
+        """
+        self.persona_name = name
 
     def build_prompt(
             self,

@@ -22,9 +22,6 @@ model:
   top_k: 40
   model_type: 'knowledge'
 persona:
-  # NOTE: for now it is assumed this matches the name of your actual bot!
-  #  Make sure your config matches then telegram bot you plan on using
-  name: 'krondor-bot'
   templates:
     # Template for describing a private chat
     # {user_username} | {user_first_name} | {user_last_name} | {user_bio}
@@ -53,7 +50,6 @@ chat_ml:
 
   stop_sequences:
     # Covers our configured bot name
-    - '<|im_start|>krondor-bot\n'
     - '<|im_end|>'
     - '<|endoftext|>'
     - '</assistant'
