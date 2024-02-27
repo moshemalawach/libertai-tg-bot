@@ -1,6 +1,7 @@
 import json
 from typing import List
 
+from config import AppConfig
 from telebot import types
 
 # TODO: find a way to get around having this in memory the whole time
@@ -31,18 +32,20 @@ def chat_id_from_message(message: types.Message) -> ChatId:
     else:
         return str(message.chat.id)
 
-
 class History():
     """
     An in-memory representation of a chat bot history.
     Tracks total history of all chats connected to the bot.
     """
 
+    # Where to read / write the chat history on disk
+    file_path: str
     # Map of chat_id to chat history
     # Dict[ChatId, List[types.Message]]
     history = {}
 
-    def __init__(self):
+    def __init__(self, appConfig: AppConfig):
+        self.file_path = appConfig.get_config()['history']['file']
         self.load()
 
     def dump(self):
@@ -51,7 +54,7 @@ class History():
         to_write = {}
         for chat_id, history in self.history.items():
             to_write[chat_id] = [msg.json for msg in history]
-        with open(HISTORY_FILE, "w") as f:
+        with open(self.file_path, "w") as f:
             json.dump(to_write, f)
 
     def load(self):
@@ -59,7 +62,7 @@ class History():
         """
         try:
             history = {}
-            with open(HISTORY_FILE, "r") as f:
+            with open(self.file_path, "r") as f:
                 history = json.load(f)
             for chat_id in history.keys():
                 self.history[chat_id] = [
@@ -77,6 +80,8 @@ class History():
         Returns:
             types.Message: the most recent message in the history if available. None if otherwise
         """
+        # TODO: all of a sudden this is demanding that chat_id is a str! Somethin'g wrong here
+        chat_id = str(chat_id)
         if chat_id in self.history:
             return self.history[chat_id][-1]
         else:
@@ -92,7 +97,8 @@ class History():
         Returns:
             types.Message: the nth most recent message in the history if available. None if otherwise
         """
-
+        # TODO: all of a sudden this is demanding that chat_id is a str! Somethin'g wrong here
+        chat_id = str(chat_id)
         # Check if the history is big enough -- avoid wrapping back around
         if nth > len(self.history[chat_id]):
             return None
@@ -106,6 +112,8 @@ class History():
         Args:
             message (telebot.types.Message): The message for which we want to clear the preceeding chat history
         """
+        # TODO: all of a sudden this is demanding that chat_id is a str! Somethin'g wrong here
+        chat_id = str(chat_id)
         if chat_id in self.history:
             self.history[chat_id] = []
         self.dump()
@@ -118,6 +126,8 @@ class History():
             message (types.Message): The message to add to the chat history.
         """
         chat_id = chat_id_from_message(message)
+        # TODO: all of a sudden this is demanding that chat_id is a str! Somethin'g wrong here
+        chat_id = str(chat_id)
         if chat_id not in self.history:
             self.history[chat_id] = []
         self.history[chat_id].append(message)
@@ -132,6 +142,8 @@ class History():
             message (types.Message): The message to add to the chat history.
         """
         chat_id = chat_id_from_message(message)
+        # TODO: all of a sudden this is demanding that chat_id is a str! Somethin'g wrong here
+        chat_id = str(chat_id)
         if chat_id in self.history:
             for i, msg in enumerate(self.history[chat_id]):
                 if msg.message_id == message.message_id:

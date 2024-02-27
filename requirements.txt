@@ -1,7 +1,6 @@
-pyTelegramBotAPI
 telebot
 python-dotenv
 aiohttp
 requests
 wikipedia
-coloredlogs
+pyyaml
