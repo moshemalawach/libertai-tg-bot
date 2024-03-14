@@ -1,3 +1,76 @@
+from sqlalchemy import Column, Integer, String, DateTime, create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.schema import UniqueConstraint
+from sqlalchemy.orm import sessionmaker
+from telebot import types as telebot_types
+import datetime
+
+Base = declarative_base()
+
+# Model Declarations
+
+
+class Messages(Base):
+    __tablename__ = "messages"
+
+    id = Column(Integer, primary_key=True)
+
+    # Chat ID and message ID are unique together
+
+    chat_id = Column(String)
+    message_id = Column(String)
+
+    # Message metadata we need to store
+
+    # Who sent the message
+    from_user = Column(String)
+    # If the message is a reply, who is it replying to. Otherwise, None
+    is_reply_to = Column(String)
+    # The message text itself
+    text = Column(String)
+
+    # When the message was sent.
+    timestamp = Column(DateTime)
+
+    __table_args__ = (
+        UniqueConstraint("chat_id", "message_id", name="uix_chat_id_message_id"),
+    )
+
+
+# Database Initialization and helpers
+
+
+class Database:
+    def __init__(self, database_url):
+        print(database_url)
+        self.engine = create_engine(database_url)
+        self.Session = sessionmaker(bind=self.engine)
+        Base.metadata.create_all(self.engine)
+
+    def add_message(self, message: telebot_types.Message):
+        session = self.Session()
+        new_message = Messages(
+            chat_id=message.chat.id,
+            message_id=message.message_id,
+            from_user=message.from_user.id,
+            is_reply_to=message.reply_to_message.message_id
+            if message.reply_to_message
+            else None,
+            text=message.text,
+            timestamp=datetime.datetime.fromtimestamp(message.date),
+        )
+        session.add(new_message)
+        session.commit()
+        session.close()
+
+    def clear_chat_history(self, chat_id):
+        session = self.Session()
+        session.query(Messages).filter(Messages.chat_id == chat_id).delete()
+        session.commit()
+        session.close()
+
+
+'''
 import json
 from typing import List
 
@@ -151,3 +224,4 @@ class History():
                     self.dump()
                     return None
         return None
+'''
