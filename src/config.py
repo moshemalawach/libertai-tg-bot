@@ -26,7 +26,7 @@ class Config:
 
         # Set the log path
         self.log_path = os.getenv("LOG_PATH")
-
+        
         # Determine if the DEBUG mode is set
         debug = os.getenv("DEBUG", "True")
         self.debug = debug == "True"

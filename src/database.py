@@ -56,7 +56,7 @@ class Database:
         self.Session = sessionmaker(bind=self.engine)
         Base.metadata.create_all(self.engine)
 
-    def add_message(self, message: telebot_types.Message):
+    def add_message(self, message: telebot_types.Message, edited=False, reply_to_message_id=None):
         session = self.Session()
 
         # Create or update the user as necessary
@@ -75,17 +75,29 @@ class Database:
             )
             session.add(user)
             session.commit()
+        
+        # For some reason, reply object's don't record the message they are replying to
+        #  In the context of typing back a reply from the bot to a message, we need to explicitly
+        #   provide an option to set the reply_to field
+        if reply_to_message_id is not None:
+            reply_to_id = reply_to_message_id
+        else:
+            reply_to_id = message.reply_to_message.message_id if message.reply_to_message else None
 
         # Add the message to the database
         new_message = Message(
             id=message.message_id,
             chat_id=message.chat.id,
             user_id=user.id,
-            reply_to_message_id=message.reply_to_message.message_id
-            if message.reply_to_message
-            else None,
+            reply_to_message_id=reply_to_id,
             text=message.text,
-            timestamp=datetime.datetime.fromtimestamp(message.date),
+            # NOTE: I am not 110% sure this is desirable, but does solve a problem in that
+            #  it records our bot's initial replies as not having take place at the same time as the message 
+            #   they are replying to, but when the bot finishes processing the message and completes
+            timestamp=datetime.datetime.fromtimestamp(message.edit_date)
+            if edited
+            else
+            datetime.datetime.fromtimestamp(message.date),
         )
 
         session.add(new_message)

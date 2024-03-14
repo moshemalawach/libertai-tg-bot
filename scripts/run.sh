@@ -4,8 +4,10 @@
 source venv/bin/activate
 
 source .env
-export DEBUG=false
-python3 src/app.py > /dev/null 2>&1
+export DATABASE_URL=sqlite:///./data/app.db
+export LOG_PATH=./data/app.log
+export DEBUG=False
+python3 src/app.py
 
 # Deactivate the virtual environment
 deactivate

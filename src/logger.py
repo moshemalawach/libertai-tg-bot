@@ -50,7 +50,7 @@ class Logger:
             logging.basicConfig(level=logging.INFO)
 
         # Set where to send logs
-        if log_path:
+        if log_path is not None and log_path.strip() != "":
             handler = logging.FileHandler(log_path)
             handler.setFormatter(formatter)
         else:

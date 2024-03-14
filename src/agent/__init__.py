@@ -323,7 +323,7 @@ class Agent:
         # Keep querying the model until we get a qualified response or run out of call depth
         # Build our prompt with the current history and call stack
         chat_id = message.chat.id
-        message_id = message.id
+        message_id = message.message_id
         prompt = self.build_prompt(database, message)
 
         logger.debug(
@@ -336,15 +336,35 @@ class Agent:
         fn_calls = 0
         compounded_result = ""
         stopped_reason = None
+
+        logger.debug(
+            f"Completing on prompt",
+            chat_id=chat_id,
+            message_id=message_id
+        )
+
         while tries < self.max_tries:
             logger.debug(
-                f"attempt: {tries}",
+                f"Completion attempt: {tries}",
                 chat_id=chat_id,
-                message_id=message_id,
+                message_id=message_id
             )
+            
+            logger.debug(
+                f"Compounded result: {compounded_result}",
+                chat_id=chat_id,
+                message_id=message_id
+            )
+
             # TODO: I really hope we don't break the token limit here -- add proper checks and verify!
             stopped, last_result = await self.complete(
                 prompt + compounded_result, chat_id
+            )
+
+            logger.debug(
+                f"Last result: {last_result}",
+                chat_id=chat_id,
+                message_id=message_id
             )
 
             # Try to extract a function call from the `last_result`
@@ -358,6 +378,7 @@ class Agent:
                 function_call = (
                     f"<function-call>{function_call_json_str}</function-call>"
                 )
+                
                 # Parse the function call
                 function_call_json = json.loads(function_call_json_str)
                 fn = llm_functions[function_call_json["name"]]
@@ -444,7 +465,7 @@ class Agent:
             results = results[0].rstrip()
             compounded_result = results
             logger.debug(
-                f"Compounded result: {compounded_result}",
+                f"Final result: {compounded_result}",
                 chat_id=chat_id,
                 message_id=message_id,
             )

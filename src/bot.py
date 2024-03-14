@@ -36,10 +36,17 @@ class Bot:
         agent_config = config.agent_config
 
         # Create our Async
-        self.bot = async_telebot.AsyncTeleBot(tg_token)
-        self.logger = Logger(log_path, debug)
-        self.database = Database(database_url)
-        self.agent = Agent(agent_config)
+        try:
+            self.logger = Logger(log_path, debug)
+            self.logger.info("Setting up Bot...")
+            self.bot = async_telebot.AsyncTeleBot(tg_token)
+            self.logger.info("Setting up Database...")
+            self.database = Database(database_url)
+            self.logger.info("Setting up Agent...")
+            self.agent = Agent(agent_config)
+        except Exception as e:
+            self.logger.error(f"An unexpected error occurred during setup: {e}")
+            raise e
 
     # NOTE (amiller68): This is called later since not doing so would require __init__ to be async
     #  This is used to provide the bot with a base against which to determine if it's being addressed
@@ -98,7 +105,7 @@ class Bot:
         Clear the history of messages for a given chat.
         """
         chat_id = message.chat.id
-        self.logger.info("/clear called", chat_id=chat_id)
+        self.logger.info("/clear called", chat_id=chat_id, message_id=message.message_id)
         reply = await self.bot.reply_to(message, "Clearing chat history...")
         self.database.clear_chat_history(chat_id)
         await self.bot.edit_message_text(
@@ -112,6 +119,7 @@ class Bot:
         Use the chatbot to construct an informed response
         """
         chat_id = message.chat.id
+        self.logger.info("Received text message", chat_id=chat_id, message_id=message.message_id)
         # Add the message to the chat history
         self.database.add_message(message)
         # If the message is not a private message, check if the message mentions the bot
@@ -151,15 +159,15 @@ class Bot:
             self.logger.error(
                 f"error handling text message: {e}",
                 chat_id=chat_id,
-                message_id=message.id,
+                message_id=message.message_id,
             )
-            await self.bot.edit_message_text(
+            reply = await self.bot.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=reply.message_id,
                 text="I'm sorry, I got confused. Please try again.",
             )
         finally:
-            self.database.add_message(reply)
+            self.database.add_message(reply, reply_to_message_id=message.message_id)
             return None
 
     # NOTE (amiller68): This is where all of the handlers and command get registered and set on the bot
