@@ -3,8 +3,7 @@ from telebot import types as telebot_types, async_telebot
 
 from database import Database
 from logger import Logger
-
-# from agent import Agent
+from agent import Agent
 from config import Config
 
 # Common monikers for the chat bot or what one might call it
@@ -40,13 +39,13 @@ class Bot:
         self.bot = async_telebot.AsyncTeleBot(tg_token)
         self.logger = Logger(log_path, debug)
         self.database = Database(database_url)
-        # self.agent = Agent(agent_config)
+        self.agent = Agent(agent_config)
 
     # NOTE (amiller68): This is called later since not doing so would require __init__ to be async
     #  This is used to provide the bot with a base against which to determine if it's being addressed
     def set_name(self, name: str):
         # Set the name of the bot on the agent -- this is it's telegram username and persona name
-        # self.agent.set_persona_name(name)
+        self.agent.set_persona_name(name)
         names = BOT_NAMES
         names.append(name)
         bot_names = []
@@ -125,7 +124,6 @@ class Bot:
                     break
             if not found:
                 return None
-            """
             # Don't let the bot respond to messages that are replies to itself
             if (
                 (message.reply_to_message is not None)
@@ -133,27 +131,28 @@ class Bot:
                 == self.agent.persona_name
             ):
                 return None
-            """
+
         # Send an initial message to the user
         result = "I'm thinking..."
         reply = await self.bot.reply_to(message, result)
         # Attempt to reply to the message
         try:
-            """
-            for code, content in self.agent.yield_response(self.database, message):
+            async for _code, content in self.agent.yield_response(
+                message, self.database, self.logger
+            ):
                 # Check for an updated response, otherwise just do nothing
                 if content != result:
                     result = content
                     # Update the message
-                    reply = self.bot.edit_message_text(
+                    reply = await self.bot.edit_message_text(
                         chat_id=chat_id, message_id=reply.message_id, text=result
                     )
-            """
-            reply = await self.bot.edit_message_text(
-                chat_id=chat_id, message_id=reply.message_id, text="oops"
-            )
         except Exception as e:
-            self.logger.error(f"error handling text message: {e}", chat_id=chat_id)
+            self.logger.error(
+                f"error handling text message: {e}",
+                chat_id=chat_id,
+                message_id=message.id,
+            )
             await self.bot.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=reply.message_id,

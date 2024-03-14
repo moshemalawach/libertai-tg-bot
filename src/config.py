@@ -28,8 +28,8 @@ class Config:
         self.log_path = os.getenv("LOG_PATH")
 
         # Determine if the DEBUG mode is set
-        debug = os.getenv("DEBUG", "true")
-        self.debug = debug == "true"
+        debug = os.getenv("DEBUG", "True")
+        self.debug = debug == "True"
 
         # Read the agent configuration at the path
         agent_config_path = os.getenv("AGENT_CONFIG_PATH", "agent.yaml")

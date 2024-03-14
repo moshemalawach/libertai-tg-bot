@@ -63,6 +63,14 @@ class Logger:
 
         self.logger = logger
 
+    def warn(self, message, chat_id=None, message_id=None):
+        extra = {}
+        if chat_id:
+            extra["chat_id"] = chat_id
+        if message_id:
+            extra["message_id"] = message_id
+        self.logger.warning(message, extra=extra)
+
     def debug(self, message, chat_id=None, message_id=None):
         extra = {}
         if chat_id:

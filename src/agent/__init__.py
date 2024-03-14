@@ -1,15 +1,16 @@
-import inspect
 import json
 import re
-
+import sys
 import aiohttp
+
 from telebot import types as telebot_types
 
 from functions import functions as llm_functions
-from history import History, ChatId
-from config import AppConfig
-
 from .utils import calculate_number_of_tokens, fmt_msg_user_name, introspect_function
+
+sys.path.append("..")
+from database import Database
+from logger import Logger
 
 # CONSTANTS
 
@@ -27,47 +28,44 @@ class Agent:
     A Chat Bot that generates informed prompts based on the current conversation history.
     """
 
-    def __init__(self, config: AppConfig):
-        self.logger = config.get_logger()
-        config = config.get_config()
-
+    def __init__(self, agent_config: dict):
         # Instance Configuration
-        self.model_name = config["model"]["name"]
-        self.model_api_url = config["model"]["api_url"]
-        self.model_engine = config["model"]["engine"]
-        self.model_pass_credentials = config["model"]["pass_credentials"]
+        self.model_name = agent_config["model"]["name"]
+        self.model_api_url = agent_config["model"]["api_url"]
+        self.model_engine = agent_config["model"]["engine"]
+        self.model_pass_credentials = agent_config["model"]["pass_credentials"]
 
         # Model Parameters
-        self.max_length = config["model"]["max_length"]
-        self.max_tries = config["model"]["max_tries"]
-        self.max_tokens = config["model"]["max_tokens"]
-        self.temperature = config["model"]["temperature"]
-        self.sampler_order = config["model"]["sampler_order"]
-        self.top_p = config["model"]["top_p"]
-        self.top_k = config["model"]["top_k"]
-        self.model_type = config["model"]["model_type"]
+        self.max_length = agent_config["model"]["max_length"]
+        self.max_tries = agent_config["model"]["max_tries"]
+        self.max_tokens = agent_config["model"]["max_tokens"]
+        self.temperature = agent_config["model"]["temperature"]
+        self.sampler_order = agent_config["model"]["sampler_order"]
+        self.top_p = agent_config["model"]["top_p"]
+        self.top_k = agent_config["model"]["top_k"]
+        self.model_type = agent_config["model"]["model_type"]
 
         # Chat ML Configuration
-        self.user_prepend = config["chat_ml"]["user_prepend"]
-        self.user_append = config["chat_ml"]["user_append"]
-        self.stop_sequences = config["chat_ml"]["stop_sequences"]
-        self.line_separator = config["chat_ml"]["line_separator"]
+        self.user_prepend = agent_config["chat_ml"]["user_prepend"]
+        self.user_append = agent_config["chat_ml"]["user_append"]
+        self.stop_sequences = agent_config["chat_ml"]["stop_sequences"]
+        self.line_separator = agent_config["chat_ml"]["line_separator"]
 
         # Persona Configuration and Templates
         # TODO: better configuration handling for this
-        # self.persona_name = config['persona']['name']
+        # self.persona_name = agent_config['persona']['name']
         self.persona_name = "chat-bot"
-        with open(config["persona"]["templates"]["private_chat"], "r") as f:
+        with open(agent_config["persona"]["templates"]["private_chat"], "r") as f:
             self.private_chat_template = f.read()
-        with open(config["persona"]["templates"]["group_chat"], "r") as f:
+        with open(agent_config["persona"]["templates"]["group_chat"], "r") as f:
             self.group_chat_template = f.read()
-        with open(config["persona"]["templates"]["persona"], "r") as f:
+        with open(agent_config["persona"]["templates"]["persona"], "r") as f:
             self.persona_template = f.read()
-        with open(config["persona"]["templates"]["example"], "r") as f:
+        with open(agent_config["persona"]["templates"]["example"], "r") as f:
             self.example = f.read()
-        with open(config["persona"]["templates"]["reward"], "r") as f:
+        with open(agent_config["persona"]["templates"]["reward"], "r") as f:
             self.reward = f.read()
-        with open(config["persona"]["templates"]["punishment"], "r") as f:
+        with open(agent_config["persona"]["templates"]["punishment"], "r") as f:
             self.punishment = f.read()
 
         # Initialize an empty Map to track open context slots on the server
@@ -81,17 +79,13 @@ class Agent:
 
     def build_prompt(
         self,
-        history: History,
+        database: Database,
         message: telebot_types.Message,
-    ) -> [str, str]:
+    ) -> str:
         """
         Build a prompt with proper context given the available
         chat history. Try to use as much of the
         history as possible without exceeding the token limit.
-
-        Args:
-            history (history.History): chat history resources available to the model
-            message (telebot_types.Message): the message the bot is responding too
 
         Returns
             A str containing the prompt to be used for the model
@@ -101,10 +95,8 @@ class Agent:
         used_tokens = 0
         # The chat object
         chat = message.chat
-        # The type of chat the message is in
-        chat_type = message.chat.type
         # The Id of the chat
-        chat_id = message.chat.id
+        chat_id = chat.id
 
         # Build our system prompt -- start collecting our prompt templates
 
@@ -160,31 +152,53 @@ class Agent:
         #  - repeat as needed
         # Continually pull and format logs from the message history
         # Do so until our token limit is completely used up
+        # For now we'll just pull the last 10 messages in batches
         chat_log_lines = []
-        nth_last = 1
-        while used_tokens < self.max_tokens:
-            message = history.get_chat_nth_last_message(chat_id, nth_last)
-            if message is None:
-                break
-            from_user_name = fmt_msg_user_name(message.from_user)
-            is_reply = message.reply_to_message is not None
-            # TODO:this is a good place to extract args from /ask commands
-            if is_reply:
-                to_user_name = fmt_msg_user_name(message.reply_to_message.from_user)
-                line = self.chat_message(
-                    f"{from_user_name} (in reply to {to_user_name})", message.text
-                )
-            else:
-                line = self.chat_message(from_user_name, message.text)
-            line = f"{line}{self.line_separator}"
+        # TODO: make this configurable
+        batch_size = 10
+        offset = 0
+        done = False
+        # Keep pulling messages until we're done or we've used up all our tokens
+        while not done and used_tokens < self.max_tokens:
+            # Get `batch_size` messages from the chat history
+            messages = database.get_chat_last_messages(chat_id, batch_size, offset)
 
-            additional_tokens = calculate_number_of_tokens(line)
-            # Break if this would exceed our token limit before appending to the log
-            if used_tokens + additional_tokens > self.max_tokens:
-                break
-            used_tokens += additional_tokens
-            chat_log_lines.append(line)
-            nth_last += 1
+            # Construct condition on whether to break due to no more messages
+            # If set we won't re-enter the loop
+            done = messages is None or len(messages) < batch_size
+
+            # Iterate over the messages we've pulled
+            for message in messages:
+                from_user_name = fmt_msg_user_name(message.user)
+                is_reply = message.reply_to_message is not None
+
+                if is_reply:
+                    to_user_name = fmt_msg_user_name(message.reply_to_message.user)
+                    line = self.chat_message(
+                        f"{from_user_name} (in reply to {to_user_name})", message.text
+                    )
+                else:
+                    line = self.chat_message(from_user_name, message.text)
+                line = f"{line}{self.line_separator}"
+
+                # Calculate the number of tokens this line would use
+                additional_tokens = calculate_number_of_tokens(line)
+
+                # Break if this would exceed our token limit before appending to the log
+                if used_tokens + additional_tokens > self.max_tokens:
+                    done = True
+                    # Break out of the for loop.
+                    # Since we're 'done' we won't continue the while loop
+                    break
+
+                # Update our used tokens count
+                used_tokens += additional_tokens
+
+                # Actually append the line to the log
+                chat_log_lines.append(line)
+
+            # Update our offset
+            offset += batch_size
 
         # Now build our prompt in reverse
         chat_prompt_context = system_prompt
@@ -197,7 +211,9 @@ class Agent:
         # Done! return the formed prompt
         return chat_prompt
 
-    async def complete(self, prompt: str, chat_id: str, length=None) -> [bool, str]:
+    async def complete(
+        self, prompt: str, chat_id: str, length=None
+    ) -> tuple[bool, str]:
         """
         Complete a prompt with the model
 
@@ -241,6 +257,7 @@ class Agent:
                 {
                     "n_predict": length is None and self.max_length or length,
                     "slot_id": slot_id,
+                    "id_slot": slot_id,
                     "cache_prompt": True,
                     "typical_p": 1,
                     "tfs_z": 1,
@@ -264,29 +281,28 @@ class Agent:
         async with session.post(self.model_api_url, json=params) as response:
             if response.status == 200:
                 response_data = await response.json()
-
+                return_data = False, ""
+                # NOTE: other engines are untested and seem incorrect
                 if self.model_engine == "kobold":
                     return_data = False, response_data["results"][0]["text"]
 
                 elif self.model_engine == "llamacpp":
-                    slot_id = response_data["slot_id"]
+                    if "slot_id" in response_data:
+                        slot_id = response_data["slot_id"]
+                    elif "id_slot" in response_data:
+                        slot_id = response_data["id_slot"]
                     stopped = (
                         response_data["stopped_eos"] or response_data["stopped_word"]
                     )
                     return_data = stopped, response_data["content"]
+                    self.model_chat_slots[chat_id] = session, slot_id
 
                 elif self.model_engine == "openai":
                     return_data = False, response_data.choices[0]["text"]
 
-                self.model_chat_slots[chat_id] = session, response_data["slot_id"]
-
                 return return_data
             else:
-                self.logger.error(
-                    f"Model API returned status {response.status}",
-                    extra={"chat_id": chat_id},
-                )
-                return True, None
+                raise Exception("Non-200 response from the model: " + response.status)
 
     async def close_sessions(self):
         """
@@ -295,7 +311,9 @@ class Agent:
         for session, _ in self.model_chat_slots.values():
             await session.close()
 
-    async def yield_response(self, history: History, message: telebot_types.Message):
+    async def yield_response(
+        self, message: telebot_types.Message, database: Database, logger: Logger
+    ):
         """
         Yield a response from the model given the current chat history
 
@@ -306,11 +324,12 @@ class Agent:
         # Build our prompt with the current history and call stack
         chat_id = message.chat.id
         message_id = message.id
-        prompt = self.build_prompt(history, message)
+        prompt = self.build_prompt(database, message)
 
-        self.logger.debug(
+        logger.debug(
             f"Constructed prompt: {prompt}",
-            extra={"chat_id": chat_id, "message_id": message_id},
+            chat_id=chat_id,
+            message_id=message_id,
         )
 
         tries = 0
@@ -318,6 +337,11 @@ class Agent:
         compounded_result = ""
         stopped_reason = None
         while tries < self.max_tries:
+            logger.debug(
+                f"attempt: {tries}",
+                chat_id=chat_id,
+                message_id=message_id,
+            )
             # TODO: I really hope we don't break the token limit here -- add proper checks and verify!
             stopped, last_result = await self.complete(
                 prompt + compounded_result, chat_id
@@ -338,9 +362,10 @@ class Agent:
                 function_call_json = json.loads(function_call_json_str)
                 fn = llm_functions[function_call_json["name"]]
 
-                self.logger.info(
+                logger.info(
                     f"Calling function `{function_call_json['name']}` with arguments `{function_call_json['args']}`",
-                    extra={"chat_id": chat_id, "message_id": message_id},
+                    chat_id=chat_id,
+                    message_id=message_id,
                 )
 
                 yield (
@@ -355,17 +380,19 @@ class Agent:
                     function_result = f"<function-result>{json.dumps(function_result_json)}</function-result>"
                     # remove new lines from the result
                     function_result = function_result.replace("\n", "")
-                    self.logger.info(
+                    logger.info(
                         f"Function `{function_call_json['name']}` returned `{function_result_json['result']}`",
-                        extra={"chat_id": chat_id, "message_id": message_id},
+                        chat_id=chat_id,
+                        message_id=message_id,
                     )
                 except Exception as e:
                     function_error_json = {**function_call_json, "error": str(e)}
                     function_error = f"<function-error>{json.dumps(function_error_json)}</function-error>"
                     function_result = function_error.replace("\n", "")
-                    self.logger.warn(
+                    logger.warn(
                         f"Function `{function_call_json['name']}` raised an error: {str(e)}",
-                        extra={"chat_id": chat_id, "message_id": message_id},
+                        chat_id=chat_id,
+                        message_id=message_id,
                     )
                 finally:
                     compounded_result = f"{compounded_result}{self.line_separator}{function_call}{self.line_separator}{function_result}"
@@ -373,9 +400,10 @@ class Agent:
                     # Continue to the next iteration without incurring a 'try'
                     continue
             elif fn_calls >= MAX_FUNCTION_CALLS:
-                self.logger.warn(
-                    f"Function call depth exceeded",
-                    extra={"chat_id": chat_id, "message_id": message_id},
+                logger.warn(
+                    "Function call depth exceeded",
+                    chat_id=chat_id,
+                    message_id=message_id,
                 )
                 yield (
                     "error",
@@ -393,9 +421,10 @@ class Agent:
                     f"<function-result>{function_result_json_str}</function-result>"
                 )
                 last_result = f'{function_result}{self.line_separator}<function-note>{{"note": "You just fabricated a result. Please consider using a function call, instead of generating an uninformed result"}}</function-note>'
-                self.logger.warn(
+                logger.warn(
                     f"fabricated function result: {function_result_json_str}",
-                    extra={"chat_id": chat_id, "message_id": message_id},
+                    chat_id=chat_id,
+                    message_id=message_id,
                 )
                 stopped = False
                 fn_calls += 1
@@ -414,9 +443,10 @@ class Agent:
 
             results = results[0].rstrip()
             compounded_result = results
-            self.logger.debug(
+            logger.debug(
                 f"Compounded result: {compounded_result}",
-                extra={"chat_id": chat_id, "message_id": message_id},
+                chat_id=chat_id,
+                message_id=message_id,
             )
 
             if stopped:
@@ -427,9 +457,10 @@ class Agent:
                 break
 
         if not stopped_reason:
-            self.logger.warn(
-                f"Failed to stop within max tries",
-                extra={"chat_id": chat_id, "message_id": message_id},
+            logger.warn(
+                "Failed to stop within max tries",
+                chat_id=chat_id,
+                message_id=message_id,
             )
             yield (
                 "error",
@@ -437,9 +468,10 @@ class Agent:
             )
         else:
             if stopped_reason == "max_length":
-                self.logger.warn(
-                    f"Stopped due to max length",
-                    extra={"chat_id": chat_id, "message_id": message_id},
+                logger.warn(
+                    "Stopped due to max length",
+                    chat_id=chat_id,
+                    message_id=message_id,
                 )
                 yield (
                     "error",
@@ -462,9 +494,10 @@ class Agent:
 
                 yield "success", clean_result
             else:
-                self.logger.warn(
-                    f"Failed to generate a response",
-                    extra={"chat_id": chat_id, "message_id": message_id},
+                logger.warn(
+                    "Failed to generate a response",
+                    chat_id=chat_id,
+                    message_id=message_id,
                 )
                 yield (
                     "error",
