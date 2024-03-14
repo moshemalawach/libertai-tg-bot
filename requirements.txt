@@ -1,3 +1,5 @@
+SQLAlchemy
+alembic
 telebot
 python-dotenv
 aiohttp

@@ -1,53 +1,53 @@
-# Default Application Configuration
-log:
-  # Where to write logs when not in debug mode
-  file: './data/app.log'
-# TODO: Sqlite implementation, but for now just json
-history:
-  file: './data/history.json'
+# Default Model Configuration
 model:
-  # Openly Available Hermes 2.5 (7B) API running on LibertAI
+  # Model Name
   name: 'OpenHermes 2.5 (7B)'
+  # Model API URL
   api_url: 'https://curated.aleph.cloud/vm/a8b6d895cfe757d4bc5db9ba30675b5031fe3189a99a14f13d5210c473220caf/completion'
+  # Engine type to use. Supported engines: 'llamacpp', 'kobold', 'openai'
   engine: 'llamacpp'
   pass_credentials: true
-  # TODO: should I make slot id configurable? For now it's none by default anyway.
-  # slot_id: none
+  # Max response length
   max_length: 200
-  max_tries: 2
+  # Max number of tries to get a response
+  max_tries: 3
+  # Max number of tokens to generate we can use
   max_tokens: 16384
   temperature: 0.7
   sampler_order: [6, 0, 1, 3, 4, 2, 5]
   top_p: 0.9
   top_k: 40
   model_type: 'knowledge'
+# Persona Configuration
 persona:
+  # We base how we build prompts off of templates
   templates:
-    # Template for describing a private chat
+    # Template for describing a private chat -- how to describe a user to the model
     # {user_username} | {user_first_name} | {user_last_name} | {user_bio}
     private_chat: ./templates/private_chat.txt
-    # Template for describing a group chat
+    # Template for describing a group chat -- how to describe a chat to the model
     # {chat_title} | {chat_description} | {chat_members}
     group_chat: ./templates/group_chat.txt
-    # TODO: maybe tools should be split out from persona
-    # Template for persona prompt to the model
+    # Template for persona prompt to the model -- we also include critical information about how to call functions here by default
     # {persona_name} | {functions} | {max_functions_calls}
-    # Note: in order for functions to work, you need to instruct the model within the persona prompt
+    # Note: in order for functions to work, you need to instruct the model within the persona prompt. We do by default.
     persona: ./templates/persona.txt
-    # Portential reward message for the model
+    # Portential reward message for the model -- how to reward the model
     # N/A (no templating)
     reward: ./templates/reward.txt
-    # Potential punishment message for the model
+    # Potential punishment message for the model -- how to punish the model
     # N/A ( no templating)
     punishment: ./templates/punishment.txt
     # Example of a message that can be sent to the model
     # N/A (no templating)
     # Note: in order for functions to work, it is best to provide a proper example of a calling a tool, with examples of handling results, errors, and exceptions.
     example: ./templates/example.txt
+# We build prompts off of templates and split up prompts with ChatML
 chat_ml:
+  # The user prepend and append are used to wrap the user's input
   user_prepend: '<|im_start|>'
   user_append: '<|im_end|>'
-
+  # The stop sequences are used to stop the model from generating more text
   stop_sequences:
     # Covers our configured bot name
     - '<|im_end|>'
@@ -55,6 +55,3 @@ chat_ml:
     - '</assistant'
     - '</user'
   line_separator: '\n'
-
-# TODO: idt it's a good idea to make commands configurable, but maybe we can enable/disable them
-# TODO: dyanmic tool configuration for easy integration
