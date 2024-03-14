@@ -113,6 +113,7 @@ async def complete(prompt, model, stop_sequences, length=None, chat_id="0"):
         params.update({
             "n_predict": length is None and model['max_length'] or length,
             "slot_id": slot_id,
+            "id_slot": slot_id,
             "cache_prompt": True,
             "typical_p": 1,
             "tfs_z": 1,
@@ -138,7 +139,11 @@ async def complete(prompt, model, stop_sequences, length=None, chat_id="0"):
 
             elif model['engine'] == "llamacpp":
                 # model['slot_id'] = response_data['slot_id']
-                slot_id = response_data['slot_id']
+                if 'slot_id' in response_data:
+                    slot_id = response_data['slot_id']
+                elif 'id_slot' in response_data:
+                    slot_id = response_data['id_slot']
+                    
                 stopped = response_data['stopped_eos'] or response_data['stopped_word']
                 return_data = stopped, response_data['content']
 
