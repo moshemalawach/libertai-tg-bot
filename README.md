@@ -107,7 +107,7 @@ You can run the following command to generate new migrations if you have made ch
 ./scripts/prepare_migrations.sh
 ```
 
-This will generate a new migration file in the `./migrations/versions` directory.
+This will generate a new migration file in the `./alembic/versions` directory.
 
 NOTE: This script is also controlled by the `DATABASE_URL` environment variable. If you do not set this, the script will default to using `sqlite:///./data/app.db` as the database URL.
 
