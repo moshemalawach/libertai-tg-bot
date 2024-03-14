@@ -9,63 +9,122 @@ information.
 It utilizes [Libertai's decentralized LLM API](https://libertai.io/apis/text-generation/) for generating context-aware responses to user queries.
 
 ## Requirements
-- Python3 + Pip3 + virtualenv
-
-## Installation
-
-```
-./install.sh
-```
+- Python3 + Pip + virtualenv
 
 ## Setup
+
+### Configuration
+
+#### Note on Environment Variables
+
+The bot is configured using environment variables.
+
+It is best to do this in a `.env` file at the root of this repository. Our scripts will look for this file and use it to set the environment variables.
+
+You can override these defaults by setting the environment variables in your environment. prior to running the bot.
+
+#### Telegram Bot Token
 
 You must a valid Telegram Bot Token in order to use this bot. You can get one by talking to
 the [BotFather](https://t.me/botfather) on Telegram.
 
-After you have obtained a token, you must export a variable called `TG_TOKEN` with the token as the value at runtime.
+Name this variable `TG_TOKEN` within your environment.
 
-Scripts assume this variable is contained within a `.env` file at the root of this repository.
+#### Logging
 
-## Configuration
+The logging is controlled by the `LOG_PATH` environment variable. This is the path to the log file that the bot will write to.
 
-See config.yml for the default configuration.
+If this is not set, the bot will default to writing logs out to stdout only.
 
-Templates for bot prompts and responses are stored in the `templates` directory.
+A good default is to set this to `./data/app.log` in the `.env` file.
 
-Available templates are:
+#### Sqlite Database
 
-- 'private_chat': How you wish to format details of a private chat.
-- 'group_chat': How you wish to format details of a group chat.
-- 'persona': What behavior you want the bot to exhibit. THe default is designed to make function calls to the bot function, make sure you understand the implications of changing this.
-- 'reward': How you want to 'reward' the bot for good behavior.
-- 'punishment': How you want to 'punish' the bot for bad behavior.
-- 'example': An example of an exchange between the bot and a user.
+The bot uses a sqlite database to store the knowledge base of messages that it has received.
+
+The URL to the database is controlled by the `DATABASE_URL` environment variable.
+
+If this is not set, the bot will default to using `sqlite:///:memory:` which will create an in-memory database that will be lost when the bot is stopped.
+
+A good default is to set this to `sqlite:///./data/app.db` in the `.env` file.
+
+#### Debug Mode
+
+If you want to run the bot in debug mode, you can set the `DEBUG` environment variable to `True`.
+
+This will log events related to LLM completion and other debug information.
+
+#### Agent
+
+The bot uses an AI agent to generate responses to user queries.
+
+See `./agent.yaml` for the default configuration. The bot will load this file and use it to configure the agent when it starts.
+
+If you want to change the agent configuration, you can do so by editing this file or setting the `AGENT_CONFIG_PATH` environment variable to the path of the file you want to use. This file must contain a valid yaml configuration for the agent.
+
+See `./agent.yaml` for the default configuration and documentation on the available options.
+
+## Installation
+
+This command sets up a virtual environment and installs the required dependencies within it for the bot to run.
+
+```
+./scripts/install.sh
+```
+
+If you would like to run the bot please ensure you use the virtual environment created by the install script.
+
+```
+source venv/bin/activate
+python3 src/app.py
+```
 
 ## Usage
 
-You can launch the bot in debug mode by running the following command:
+### Development
+
+We provide a script to run the bot in development mode. This will run the bot in debug mode, against an in-memory database and write logs to stdout.
 
 ```
-./dev.sh
+./scripts/dev.sh
 ```
 
-The bot should be available on Telegram after you have launched it.
+Make sure you have a valid Telegram Bot Token set in your environment.
 
-For example if you bot is named `liberchat_bot` you can search for it on Telegram and start a conversation with it.
-Just open:
+After you have launched the bot, you can search for it on Telegram using its username and start a conversation with it.
+
+### Production-ish
+
+#### Note on Database Migrations
+
+The bot uses an sqlite database to store the knowledge base of messages that it has received.
+
+You can use the `alembic` tool to manage the database schema. We provide scripts for doing so within the virtual environment.
+
+You can run the following command to generate new migrations if you have made changes to the database schema:
 
 ```
-https://t.me/liberchat_bot
+./scripts/prepare_migrations.sh
 ```
 
-You will see logs appear in the terminal where you launched the bot.
+This will generate a new migration file in the `./migrations/versions` directory.
 
-In order to use the bot in a production environment, you can run the following command:
+NOTE: This script is also controlled by the `DATABASE_URL` environment variable. If you do not set this, the script will default to using `sqlite:///./data/app.db` as the database URL.
+
+You can run the following command to apply the migrations to the database:
 
 ```
-./run.sh
+./scripts/migrate.sh
 ```
 
-This will divert logs to ./data/app.log if you're using the default configuration.
+This will apply any new migrations to the database.
 
-You can wrap this script in a service in order to run the bot in the background. For now the service must be running in the same directory as this repository.
+Like the previous script, this script is also controlled by the `DATABASE_URL` environment variable. If you do not set this, the script will default to using `sqlite:///./data/app.db` as the database URL.
+
+#### Running the Bot
+
+We provide a script to run the bot in production mode. This will deactivate debug mode, and allow you to configure the logging and database URL. If neither of these are set, the bot will default to writing logs to `./data/app.log` and using `sqlite:///./data/app.db` as the database URL.
+
+```
+./scripts/run.sh
+```

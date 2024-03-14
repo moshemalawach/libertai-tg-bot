@@ -3,8 +3,7 @@
 # Install virtualenv if not installed
 if ! [ -x "$(command -v virtualenv)" ]; then
   echo 'Error: virtualenv is not installed.' >&2
-  echo 'Installing virtualenv...'
-  pip install virtualenv
+  exit 1
 fi
 
 virtualenv venv
