@@ -42,11 +42,13 @@ A good default is to set this to `./data/app.log` in the `.env` file.
 
 The bot uses a sqlite database to store the knowledge base of messages that it has received.
 
-The URL to the database is controlled by the `DATABASE_URL` environment variable.
+The URL to the database is controlled by the `DATABASE_PATH` environment variable. This variable should point to where our sqlite database is located.
 
-If this is not set, the bot will default to using `sqlite:///:memory:` which will create an in-memory database that will be lost when the bot is stopped.
+NOTE: We explicitly don't set the full url because some tasks require `sqlite+aiosqlite` to be specified as the protocol. Rather than make the user specify this, we just ask for the path to the database file. `:memory:` is also a valid option.
 
-A good default is to set this to `sqlite:///./data/app.db` in the `.env` file.
+If this is not set, the bot will default to using `:memory:` which will create an in-memory database that will be lost when the bot is stopped.
+
+A good default is to set this to `./data/app.db` in the `.env` file.
 
 #### Debug Mode
 
@@ -109,7 +111,7 @@ You can run the following command to generate new migrations if you have made ch
 
 This will generate a new migration file in the `./alembic/versions` directory.
 
-NOTE: This script is also controlled by the `DATABASE_URL` environment variable. If you do not set this, the script will default to using `sqlite:///./data/app.db` as the database URL.
+NOTE: This script is also controlled by the `DATABASE_PATH` environment variable. If you do not set this, the script will default to using `./data/app.db` as the database path.
 
 You can run the following command to apply the migrations to the database:
 
@@ -119,11 +121,13 @@ You can run the following command to apply the migrations to the database:
 
 This will apply any new migrations to the database.
 
-Like the previous script, this script is also controlled by the `DATABASE_URL` environment variable. If you do not set this, the script will default to using `sqlite:///./data/app.db` as the database URL.
+Like the previous script, this script is also controlled by the `DATABASE_PATH` environment variable. If you do not set this, the script will default to using `./data/app.db` as the database path.
+
+NOTE: the bot does not run migrations automatically. You must remember to responsibly run the `migrate.sh` script when you have new migrations to apply.
 
 #### Running the Bot
 
-We provide a script to run the bot in production mode. This will deactivate debug mode, and allow you to configure the logging and database URL. If neither of these are set, the bot will default to writing logs to `./data/app.log` and using `sqlite:///./data/app.db` as the database URL.
+We provide a script to run the bot in production mode. This will deactivate debug mode, and allow you to configure the logging and database path. If neither of these are set, the bot will default to writing logs to `./data/app.log` and using `/./data/app.db` as the database path.
 
 ```
 ./scripts/run.sh

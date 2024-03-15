@@ -8,7 +8,7 @@ from sqlalchemy import pool
 from alembic import context
 
 # NOTE (amiller68): import our models and os
-from src.database import Database, Base 
+from src.database import SyncDatabase, Base 
 from dotenv import load_dotenv
 import os
 
@@ -17,15 +17,16 @@ import os
 # NOTE (amiller68): 'models' calls `load_dotenv` so we don't need to do it here.
 #  Note that this means .env is going to overwrite anything you set directly
 load_dotenv()
-database_url = os.getenv('DATABASE_URL')
+database_path = os.getenv('DATABASE_PATH')
 # Note (amiller68): Initialize our client -- in turn updating Base
-Database(database_url)
+SyncDatabase(database_path)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 # NOTE (amiller68): specify the database URL from the environment
-config.set_main_option('sqlalchemy.url', database_url)
+database_url = f'sqlite:///{database_path}'
+config.set_main_option('sqlalchemy.url', database_url) 
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

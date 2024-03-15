@@ -1,7 +1,7 @@
 import asyncio
 from telebot import types as telebot_types, async_telebot
 
-from database import Database
+from database import AsyncDatabase
 from logger import Logger
 from agent import Agent
 from config import Config
@@ -24,13 +24,13 @@ BOT_NAMES = [
 class Bot:
     bot: async_telebot.AsyncTeleBot
     logger: Logger
-    database: Database
+    database: AsyncDatabase
     # agent: Agent
     bot_names: list
 
     def __init__(self, config: Config):
         tg_token = config.tg_token
-        database_url = config.database_url
+        database_path = config.database_path
         debug = config.debug
         log_path = config.log_path
         agent_config = config.agent_config
@@ -40,8 +40,8 @@ class Bot:
             self.logger = Logger(log_path, debug)
             self.logger.info("Setting up Bot...")
             self.bot = async_telebot.AsyncTeleBot(tg_token)
-            self.logger.info("Setting up Database...")
-            self.database = Database(database_url)
+            self.logger.info("Setting up AsyncDatabase...")
+            self.database = AsyncDatabase(database_path)
             self.logger.info("Setting up Agent...")
             self.agent = Agent(agent_config)
         except Exception as e:
@@ -107,7 +107,8 @@ class Bot:
         chat_id = message.chat.id
         self.logger.info("/clear called", chat_id=chat_id, message_id=message.message_id)
         reply = await self.bot.reply_to(message, "Clearing chat history...")
-        self.database.clear_chat_history(chat_id)
+        await self.database.clear_chat_history(chat_id)
+        await self.agent.clear_chat_context(chat_id)
         await self.bot.edit_message_text(
             chat_id=chat_id, message_id=reply.message_id, text="Chat history cleared."
         )
@@ -121,7 +122,7 @@ class Bot:
         chat_id = message.chat.id
         self.logger.info("Received text message", chat_id=chat_id, message_id=message.message_id)
         # Add the message to the chat history
-        self.database.add_message(message)
+        await self.database.add_message(message)
         # If the message is not a private message, check if the message mentions the bot
         if message.chat.type not in ["private"]:
             # Don't let the bot respond to messages which don't mention the bot
@@ -167,7 +168,7 @@ class Bot:
                 text="I'm sorry, I got confused. Please try again.",
             )
         finally:
-            self.database.add_message(reply, reply_to_message_id=message.message_id)
+            await self.database.add_message(reply, edited=True, reply_to_message_id=message.message_id)
             return None
 
     # NOTE (amiller68): This is where all of the handlers and command get registered and set on the bot

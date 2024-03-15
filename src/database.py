@@ -1,18 +1,13 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, create_engine
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, create_engine, select, delete
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.schema import UniqueConstraint
 from sqlalchemy.orm import sessionmaker, relationship, joinedload
 from telebot import types as telebot_types
 import datetime
+import asyncio
 
 Base = declarative_base()
-
-# NOTE: for now all it seems like we need is User and Message data
-# I could add 'Chat', but we never need or pull that from history
-# Model Declarations
-# NOTE: now that we don't just marshal json, I am concerned about invariants that occur
-# due to ordering in how users get added to the database. This is a future concern for now
-
 
 class User(Base):
     __tablename__ = "users"
@@ -47,92 +42,88 @@ class Message(Base):
     __table_args__ = (UniqueConstraint("id", "chat_id", name="uix_id_chat_id"),)
 
 
+
 # Database Initialization and helpers
 
-
-class Database:
-    def __init__(self, database_url):
+# Simple Synchronous Database for setting up the database
+class SyncDatabase:
+    def __init__(self, database_path):
+        database_url = f"sqlite:///{database_path}"
         self.engine = create_engine(database_url)
         self.Session = sessionmaker(bind=self.engine)
         Base.metadata.create_all(self.engine)
 
-    def add_message(self, message: telebot_types.Message, edited=False, reply_to_message_id=None):
-        session = self.Session()
 
-        # Create or update the user as necessary
-        user = (
-            session.query(User)
-            .filter(User.username == message.from_user.username)
-            .first()
-        )
-        if not user:
-            user = User(
-                id=message.from_user.id,
-                username=message.from_user.username,
-                first_name=message.from_user.first_name,
-                last_name=message.from_user.last_name,
-                language_code=message.from_user.language_code,
-            )
-            session.add(user)
-            session.commit()
-        
-        # For some reason, reply object's don't record the message they are replying to
-        #  In the context of typing back a reply from the bot to a message, we need to explicitly
-        #   provide an option to set the reply_to field
-        if reply_to_message_id is not None:
-            reply_to_id = reply_to_message_id
-        else:
-            reply_to_id = message.reply_to_message.message_id if message.reply_to_message else None
+class AsyncDatabase:
+    def __init__(self, database_path):
+        database_url = f"sqlite+aiosqlite:///{database_path}"
+        self.engine = create_async_engine(database_url)
+        self.AsyncSession = sessionmaker(self.engine, expire_on_commit=False, class_=AsyncSession)
+        # If this is an in-memory database, we need to create the tables
+        if database_path == ":memory:":
+            asyncio.run(self.create_tables())
 
-        # Add the message to the database
-        new_message = Message(
-            id=message.message_id,
-            chat_id=message.chat.id,
-            user_id=user.id,
-            reply_to_message_id=reply_to_id,
-            text=message.text,
-            # NOTE: I am not 110% sure this is desirable, but does solve a problem in that
-            #  it records our bot's initial replies as not having take place at the same time as the message 
-            #   they are replying to, but when the bot finishes processing the message and completes
-            timestamp=datetime.datetime.fromtimestamp(message.edit_date)
-            if edited
-            else
-            datetime.datetime.fromtimestamp(message.date),
-        )
+    async def create_tables(self):
+        async with self.engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
-        session.add(new_message)
-        session.commit()
-        session.close()
+    async def add_message(self, message: telebot_types.Message, edited=False, reply_to_message_id=None):
+        async with self.AsyncSession() as session:
+            async with session.begin():
+                user = await session.execute(
+                    select(User).filter(User.username == message.from_user.username)
+                )
+                user = user.scalars().first()
+                if not user:
+                    user = User(
+                        id=message.from_user.id,
+                        username=message.from_user.username,
+                        first_name=message.from_user.first_name,
+                        last_name=message.from_user.last_name,
+                        language_code=message.from_user.language_code,
+                    )
+                    session.add(user)
+                
+                reply_to_id = reply_to_message_id or (message.reply_to_message.message_id if message.reply_to_message else None)
+                new_message = Message(
+                    id=message.message_id,
+                    chat_id=message.chat.id,
+                    user_id=user.id,
+                    reply_to_message_id=reply_to_id,
+                    text=message.text,
+                    timestamp=datetime.datetime.fromtimestamp(message.edit_date if edited else message.date),
+                )
+                session.add(new_message)
 
-    def update_message_text(self, message: telebot_types.Message):
-        session = self.Session()
-        message = (
-            session.query(Message).filter(Message.id == message.message_id).first()
-        )
-        if message:
-            message.text = message.text
-            session.commit()
-        session.close()
+    async def update_message_text(self, message_id, new_text):
+        async with self.AsyncSession() as session:
+            async with session.begin():
+                db_message = await session.execute(
+                    select(Message).filter(Message.id == message_id)
+                )
+                db_message = db_message.scalars().first()
+                if db_message:
+                    db_message.text = new_text
 
-    def get_chat_last_messages(self, chat_id, limit=10, offset=0):
-        session = self.Session()
-        try:
-            messages = (
-                session.query(Message)
+    async def get_chat_last_messages(self, chat_id, limit=10, offset=0):
+        async with self.AsyncSession() as session:
+            result = await session.execute(
+                select(Message)
                 .options(joinedload(Message.user))
-                .options(joinedload(Message.reply_to_message))
-                .filter(Message.chat_id == chat_id)
+                .options(joinedload(Message.reply_to_message).joinedload(Message.user))
+                .where(Message.chat_id == chat_id)
                 .order_by(Message.timestamp.desc())
                 .limit(limit)
                 .offset(offset)
-                .all()
             )
-            return messages
-        finally:
-            session.close()
 
-    def clear_chat_history(self, chat_id):
-        session = self.Session()
-        session.query(Message).filter(Message.chat_id == chat_id).delete()
-        session.commit()
-        session.close()
+            messages = result.scalars().all()
+
+            return messages
+
+    async def clear_chat_history(self, chat_id):
+        async with self.AsyncSession() as session:
+            async with session.begin():
+                await session.execute(
+                    delete(Message).where(Message.chat_id == chat_id)
+                )

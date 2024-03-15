@@ -9,7 +9,7 @@ from functions import functions as llm_functions
 from .utils import calculate_number_of_tokens, fmt_msg_user_name, introspect_function
 
 sys.path.append("..")
-from database import Database
+from database import AsyncDatabase
 from logger import Logger
 
 # CONSTANTS
@@ -77,9 +77,18 @@ class Agent:
         """
         self.persona_name = name
 
-    def build_prompt(
+    async def clear_chat_context(self, chat_id: str):
+        """
+        Clear the chat context for a given chat
+        """
+        if chat_id in self.model_chat_slots:
+            session, _ = self.model_chat_slots[chat_id]
+            await session.close()
+            del self.model_chat_slots[chat_id]
+
+    async def build_prompt(
         self,
-        database: Database,
+        database: AsyncDatabase,
         message: telebot_types.Message,
     ) -> str:
         """
@@ -97,9 +106,9 @@ class Agent:
         chat = message.chat
         # The Id of the chat
         chat_id = chat.id
-
-        # Build our system prompt -- start collecting our prompt templates
-
+        
+        # Create a chat prompt to tack on to the end of the context we build
+        chat_prompt = self.prompt_chat_message(self.persona_name, "")
         # construct our chat details
         chat_details = self.fmt_chat_details(chat)
         # construct our persona prompt
@@ -138,8 +147,6 @@ class Agent:
             )
             + self.line_separator
         )
-        # Create a chat prompt to tack on to the end of the history we will construct
-        chat_prompt = self.prompt_chat_message(self.persona_name, "")
 
         # Update our used tokens count
         system_prompt_tokens = calculate_number_of_tokens(system_prompt)
@@ -161,7 +168,7 @@ class Agent:
         # Keep pulling messages until we're done or we've used up all our tokens
         while not done and used_tokens < self.max_tokens:
             # Get `batch_size` messages from the chat history
-            messages = database.get_chat_last_messages(chat_id, batch_size, offset)
+            messages = await database.get_chat_last_messages(chat_id, batch_size, offset)
 
             # Construct condition on whether to break due to no more messages
             # If set we won't re-enter the loop
@@ -312,7 +319,7 @@ class Agent:
             await session.close()
 
     async def yield_response(
-        self, message: telebot_types.Message, database: Database, logger: Logger
+        self, message: telebot_types.Message, database: AsyncDatabase, logger: Logger
     ):
         """
         Yield a response from the model given the current chat history
@@ -324,7 +331,7 @@ class Agent:
         # Build our prompt with the current history and call stack
         chat_id = message.chat.id
         message_id = message.message_id
-        prompt = self.build_prompt(database, message)
+        prompt = await self.build_prompt(database, message)
 
         logger.debug(
             f"Constructed prompt: {prompt}",
