@@ -77,6 +77,15 @@ class Agent:
         """
         self.persona_name = name
 
+    async def clear_chat_context(self, chat_id: str):
+        """
+        Clear the chat context for a given chat
+        """
+        if chat_id in self.model_chat_slots:
+            session, _ = self.model_chat_slots[chat_id]
+            await session.close()
+            del self.model_chat_slots[chat_id]
+
     def build_prompt(
         self,
         database: Database,
@@ -97,7 +106,29 @@ class Agent:
         chat = message.chat
         # The Id of the chat
         chat_id = chat.id
+        
+        # Create a chat prompt to tack on to the end of the history we will construct
+        chat_prompt = self.prompt_chat_message(self.persona_name, "")
+        
+        # If we have context available for this chat, take advantage of it
+        # Build a prompt without any system context or chat history
+        # NOTE: this is a different type than our database model
+        #  but it should be fine
+        from_user_name = fmt_msg_user_name(message.from_user)
+        is_reply = message.reply_to_message is not None
+        if is_reply:
+            to_user_name = fmt_msg_user_name(message.reply_to_message.from_user)
+            line = self.chat_message(
+                f"{from_user_name} (in reply to {to_user_name})", message.text
+            )
+        else:
+            line = self.chat_message(from_user_name, message.text)
+        line = f"{line}{self.line_separator}"
+        chat_prompt = f"{line}{chat_prompt}"
 
+        if chat_id in self.model_chat_slots:
+            return chat_prompt
+        # Ok so we don't have any context for this chat
         # Build our system prompt -- start collecting our prompt templates
 
         # construct our chat details
@@ -138,8 +169,6 @@ class Agent:
             )
             + self.line_separator
         )
-        # Create a chat prompt to tack on to the end of the history we will construct
-        chat_prompt = self.prompt_chat_message(self.persona_name, "")
 
         # Update our used tokens count
         system_prompt_tokens = calculate_number_of_tokens(system_prompt)
@@ -156,7 +185,8 @@ class Agent:
         chat_log_lines = []
         # TODO: make this configurable
         batch_size = 10
-        offset = 0
+        # We already have the last message, so we start at 1
+        offset = 1
         done = False
         # Keep pulling messages until we're done or we've used up all our tokens
         while not done and used_tokens < self.max_tokens:

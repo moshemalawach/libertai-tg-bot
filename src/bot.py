@@ -108,6 +108,7 @@ class Bot:
         self.logger.info("/clear called", chat_id=chat_id, message_id=message.message_id)
         reply = await self.bot.reply_to(message, "Clearing chat history...")
         self.database.clear_chat_history(chat_id)
+        await self.agent.clear_chat_context(chat_id)
         await self.bot.edit_message_text(
             chat_id=chat_id, message_id=reply.message_id, text="Chat history cleared."
         )
