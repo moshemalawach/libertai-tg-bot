@@ -37,7 +37,7 @@ class Logger:
         """
 
         # Create the logger
-        logger = logging.getLogger(LOGGER_NAME)
+        logger = logging.getLogger(__name__)
         # Set the log formatter
         formatter = ChatLogFormatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(chat_id)s - %(message_id)s - %(message)s"
@@ -46,6 +46,10 @@ class Logger:
         # Set our debug mode
         if debug:
             logging.basicConfig(level=logging.DEBUG)
+            # Hide asyncio logs
+            logging.getLogger('asyncio').setLevel(logging.WARNING)
+            # Hide aiosqlite logs
+            logging.getLogger('aiosqlite').setLevel(logging.WARNING)
         else:
             logging.basicConfig(level=logging.INFO)
 

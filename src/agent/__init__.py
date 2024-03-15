@@ -86,7 +86,31 @@ class Agent:
             await session.close()
             del self.model_chat_slots[chat_id]
 
-    async def build_prompt(
+    def build_prompt(
+        self,
+        message: telebot_types.Message,
+    ) -> str:
+        """
+        Build a prompt without context based on the current message
+        Returns
+            A str containing the prompt to be used for the model
+        """
+        # Add the message to the chat prompt
+        # NOTE: this is a telebot.types.Message, not a database.Message
+        from_user_name = fmt_msg_user_name(message.from_user)
+        is_reply = message.reply_to_message is not None
+        if is_reply:
+            to_user_name = fmt_msg_user_name(message.reply_to_message.from_user)
+            line = self.chat_message(
+                f"{from_user_name} (in reply to {to_user_name})", message.text
+            )
+        else:
+            line = self.chat_message(from_user_name, message.text)
+        line = f"{line}{self.line_separator}"
+        chat_prompt = f"{line}{self.prompt_chat_message(self.persona_name, "")}"
+        return chat_prompt
+
+    async def build_prompt_context(
         self,
         database: AsyncDatabase,
         message: telebot_types.Message,
@@ -218,14 +242,33 @@ class Agent:
         # Done! return the formed prompt
         return chat_prompt
 
+    async def set_slot_context(self, message: telebot_types.Message, database: AsyncDatabase) -> int:
+        """
+        Set the slot context for a given chat. Should be called to set the initial context and slot
+        """
+
+        prompt_context = await self.build_prompt_context(database, message)
+
+
+
+
+
     async def complete(
         self, prompt: str, chat_id: str, length=None
     ) -> tuple[bool, str]:
         """
-        Complete a prompt with the model
+        Complete a prompt with the model against the given slot id.
 
         Returns a tuple of (stopped, result)
         """
+
+        # Get the session for the chat
+        # If we don't have a session, create one
+        if chat_id in self.model_chat_slots:
+            session, slot_id = self.model_chat_slots[chat_id]
+        else:
+            session = aiohttp.ClientSession()
+            slot_id = -1
 
         params = {
             "prompt": prompt,
@@ -234,19 +277,13 @@ class Agent:
             "top_k": self.top_k,
         }
 
-        # Try to get the appropriate slot for this chat_id if it exists
-        if chat_id in self.model_chat_slots:
-            session, slot_id = self.model_chat_slots[chat_id]
-        else:
-            session, slot_id = aiohttp.ClientSession(), -1
-
         # Update the parameters based on the model engine
         if self.model_engine == "kobold":
             params.update(
                 {
                     "n": 1,
                     "max_context_length": self.max_length,
-                    "max_length": length is None and self.max_length or length,
+                    "max_length": length if length is not None else self.max_length,
                     "rep_pen": 1.08,
                     "top_a": 0,
                     "typical": 1,
@@ -262,7 +299,7 @@ class Agent:
         elif self.model_engine == "llamacpp":
             params.update(
                 {
-                    "n_predict": length is None and self.max_length or length,
+                    "n_predict": length if length is not None else self.max_length,
                     "slot_id": slot_id,
                     "id_slot": slot_id,
                     "cache_prompt": True,
@@ -298,6 +335,11 @@ class Agent:
                         slot_id = response_data["slot_id"]
                     elif "id_slot" in response_data:
                         slot_id = response_data["id_slot"]
+                    logger.debug(
+                        "Received slot id: " + str(slot_id),
+                        chat_id=chat_id,
+                        message_id=message_id,
+                    )
                     stopped = (
                         response_data["stopped_eos"] or response_data["stopped_word"]
                     )
@@ -326,6 +368,21 @@ class Agent:
 
         Yields a tuple of ('update' | 'success' | 'error', message)
         """
+
+        # Get the session for the chat
+        # If we don't have a session, create one
+        if chat_id in self.model_chat_slots:
+            session, slot_id = self.model_chat_slots[chat_id]
+        else:
+            session = aiohttp.ClientSession()
+            slot_id = -1
+        
+        # Check if the slot is set
+        if slot_id == -1:
+            yield (
+                    "progress", "Hmm... just a moment"
+            )
+
 
         # Keep querying the model until we get a qualified response or run out of call depth
         # Build our prompt with the current history and call stack
@@ -365,7 +422,7 @@ class Agent:
 
             # TODO: I really hope we don't break the token limit here -- add proper checks and verify!
             stopped, last_result = await self.complete(
-                prompt + compounded_result, chat_id
+                prompt + compounded_result, chat_id, message_id, logger
             )
 
             logger.debug(
