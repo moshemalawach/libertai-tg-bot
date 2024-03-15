@@ -5,15 +5,15 @@ source venv/bin/activate
 
 echo "Running migrations..."
 
-# Set the DATABASE_URL environment variable
+# Set the DATABASE_PATH environment variable
 source .env
 
-# If the DATABASE_URL environment variable is not set, set a default value
-if [ -z "$DATABASE_URL" ]; then
-  export DATABASE_URL=sqlite:///./data/app.db
+# If the DATABASE_PATH environment variable is not set, set a default value
+if [ -z "$DATABASE_PATH" ]; then
+	export DATABASE_PATH=./data/app.db
 fi
 
-echo "DATABASE_URL: $DATABASE_URL"
+echo "DATABASE_PATH: $DATABASE_PATH"
 
 # Run the migrations
 alembic upgrade head
@@ -23,3 +23,4 @@ deactivate
 
 # Exit the script
 exit 0
+

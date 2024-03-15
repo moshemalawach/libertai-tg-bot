@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 # TODO: getopt() for cmd line arguments
 class Config:
     tg_token: str
-    database_url: str
+    database_path: str
     debug: bool
     log_path: str | None
     agent_config: dict
@@ -22,7 +22,7 @@ class Config:
         self.tg_token = tg_token
 
         # Set the Database URL. Default to in-memory for now
-        self.database_url = os.getenv("DATABASE_URL", "sqlite:///:memory:")
+        self.database_path = os.getenv("DATABASE_PATH", ":memory:")
 
         # Set the log path
         self.log_path = os.getenv("LOG_PATH")
