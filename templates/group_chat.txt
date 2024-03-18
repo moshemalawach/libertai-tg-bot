@@ -1,4 +1,0 @@
-Group Chat Details:
-- chat title: {chat_title}
-- chat description: {chat_description}
-- chat members: {chat_members}

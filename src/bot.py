@@ -105,10 +105,12 @@ class Bot:
         Clear the history of messages for a given chat.
         """
         chat_id = message.chat.id
-        self.logger.info("/clear called", chat_id=chat_id, message_id=message.message_id)
+        self.logger.info(
+            "/clear called", chat_id=chat_id, message_id=message.message_id
+        )
         reply = await self.bot.reply_to(message, "Clearing chat history...")
         await self.database.clear_chat_history(chat_id)
-        await self.agent.clear_chat_context(chat_id)
+        await self.agent.clear_chat(chat_id)
         await self.bot.edit_message_text(
             chat_id=chat_id, message_id=reply.message_id, text="Chat history cleared."
         )
@@ -120,7 +122,9 @@ class Bot:
         Use the chatbot to construct an informed response
         """
         chat_id = message.chat.id
-        self.logger.info("Received text message", chat_id=chat_id, message_id=message.message_id)
+        self.logger.info(
+            "Received text message", chat_id=chat_id, message_id=message.message_id
+        )
         # Add the message to the chat history
         await self.database.add_message(message)
         # If the message is not a private message, check if the message mentions the bot
@@ -168,7 +172,9 @@ class Bot:
                 text="I'm sorry, I got confused. Please try again.",
             )
         finally:
-            await self.database.add_message(reply, edited=True, reply_to_message_id=message.message_id)
+            await self.database.add_message(
+                reply, edited=True, reply_to_message_id=message.message_id
+            )
             return None
 
     # NOTE (amiller68): This is where all of the handlers and command get registered and set on the bot
@@ -226,4 +232,4 @@ class Bot:
             self.logger.error(f"An unexpected error occurred: {e}")
         finally:
             self.logger.info("Stopping Bot...")
-            await self.agent.close_sessions()
+            await self.agent.clear_all_chats()
