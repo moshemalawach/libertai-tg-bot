@@ -97,7 +97,7 @@ class Agent:
             await session.close()
         self.model_chat_slots = {}
 
-    # Prompt Builders and Helpers
+    ### Prompt Builders and Helpers ###
 
     def log_chat_message(
         self, message: telebot_types.Message | database.Message
@@ -117,7 +117,7 @@ class Agent:
             sender = f"{from_user_name} (in reply to {to_user_name})"
         return f"{self.user_prepend}{sender}{self.line_separator}{message.text}{self.user_append}{self.line_separator}"
 
-    def prompt_response(
+    def build_agent_prompt(
         self,
         message: telebot_types.Message | database.Message | None = None,
         text: str = "",
@@ -127,6 +127,9 @@ class Agent:
         Prompt a simple response from the model:
         - message: the message to prompt a response from (optional)
         - text: text to start the model off on (optional)
+        - token_limit: the maximum number of tokens the prompt can use
+
+        Returns a tuple of (prompt, used_tokens)
         """
 
         base = ""
@@ -150,13 +153,17 @@ class Agent:
         chat: telebot_types.Chat,
         token_limit: int = 2048,
         batch_size: int = 10,
+        offset: int = 0,
     ) -> tuple[str, int]:
         """
         Build the most up to date chat context for a given chat's history.
         Mac out at `token_limit` tokens.
 
-        Returns
-            A str containing the prompt to be used for the model
+        - chat: the chat to build the log for
+        - token_limit: the maximum number of tokens the log can use
+        - batch_size: the number of messages to pull at a time
+
+        Returns a tuple of (chat_context, used_tokens)
         """
 
         # Keep track of how many tokens we're using
@@ -217,6 +224,9 @@ class Agent:
         Utilizes the persona template and chat details in order to prime the model to use a specific persona and chat context.
 
         - chat: the chat to build the system prompt for
+        - token_limit: the maximum number of tokens the prompt can use
+
+        Returns a tuple of (system_prompt, used_tokens)
         """
 
         # Our SYSTEM prompt consists of:
@@ -245,17 +255,34 @@ class Agent:
 
         return system_prompt, used_tokens
 
-    async def complete(
-        self, prompt: str, chat_id: str, length=None
-    ) -> tuple[bool, str]:
+    async def build_prompt(
+        self, message: telebot_types.Message, database: AsyncDatabase
+    ) -> str:
+        system_prompt, used_tokens = self.build_system_prompt(
+            message.chat, token_limit=self.max_tokens
+        )
+
+        agent_prompt, _ = self.build_agent_prompt(
+            token_limit=self.max_tokens - used_tokens
+        )
+
+        chat_log, _ = await self.build_chat_log(
+            database, message.chat, token_limit=self.max_tokens - used_tokens
+        )
+
+        prompt = f"{system_prompt}{chat_log}{agent_prompt}"
+
+        return prompt
+
+    ### Server Interaction ###
+
+    async def complete(self, prompt: str, chat_id: int) -> tuple[bool, str]:
         """
-        Complete a prompt with the model against the given slot id.
+        Complete a prompt using a given session and slot id.
 
         Returns a tuple of (stopped, result)
         """
 
-        # Get the session for the chat
-        # If we don't have a session, create one
         if chat_id in self.model_chat_slots:
             session, slot_id = self.model_chat_slots[chat_id]
         else:
@@ -270,12 +297,14 @@ class Agent:
         }
 
         # Update the parameters based on the model engine
+
+        # Kobold
         if self.model_engine == "kobold":
             params.update(
                 {
                     "n": 1,
-                    "max_context_length": self.max_length,
-                    "max_length": length if length is not None else self.max_length,
+                    "max_context_length": 4096,
+                    "max_length": self.max_length,
                     "rep_pen": 1.08,
                     "top_a": 0,
                     "typical": 1,
@@ -288,59 +317,56 @@ class Agent:
                     "use_default_badwordsids": False,
                 }
             )
-        elif self.model_engine == "llamacpp":
-            params.update(
-                {
-                    "n_predict": length if length is not None else self.max_length,
-                    "slot_id": slot_id,
-                    "id_slot": slot_id,
-                    "cache_prompt": True,
-                    "typical_p": 1,
-                    "tfs_z": 1,
-                    "stop": self.stop_sequences,
-                    "use_default_badwordsids": False,
-                }
-            )
+        # OpenAI
         elif self.model_engine == "openai":
             params.update(
                 {
                     "n": 1,
                     "stop": self.stop_sequences,
-                    "max_tokens": length is None and self.max_length or length,
+                    "max_tokens": self.max_length,
+                }
+            )
+        elif self.model_engine == "llamacpp":
+            params.update(
+                {
+                    "n_predict": self.max_length,
+                    "id_slot": slot_id,
+                    "typical_p": 1,
+                    "tfs_z": 1,
+                    "stop": self.stop_sequences,
+                    "cache_prompt": True,
+                    "use_default_badwordsids": False,
                 }
             )
         else:
             raise Exception("complete(): unsupported model engine")
 
-        # TODO: handle other engines responses
-        # Query the model
         async with session.post(self.model_api_url, json=params) as response:
             if response.status == 200:
                 response_data = await response.json()
                 return_data = False, ""
-                # NOTE: other engines are untested and seem incorrect
+
+                # NOTE: modles other than llamacpp are untested and seem incorrect
                 if self.model_engine == "kobold":
                     return_data = False, response_data["results"][0]["text"]
-
+                elif self.model_engine == "openai":
+                    return_data = False, response_data.choices[0]["text"]
+                # LlamaCPP
                 elif self.model_engine == "llamacpp":
-                    if "slot_id" in response_data:
-                        slot_id = response_data["slot_id"]
-                    elif "id_slot" in response_data:
-                        slot_id = response_data["id_slot"]
+                    slot_id = response_data["id_slot"]
+                    self.model_chat_slots[chat_id] = session, slot_id
                     stopped = (
                         response_data["stopped_eos"] or response_data["stopped_word"]
                     )
                     return_data = stopped, response_data["content"]
-                    self.model_chat_slots[chat_id] = session, slot_id
-
-                elif self.model_engine == "openai":
-                    return_data = False, response_data.choices[0]["text"]
 
                 return return_data
             else:
                 raise Exception("Non-200 response from the model: " + response.status)
 
-    # TODO: split out the response yielding logic from the agent
+    ### Response Yielding ###
+
+    # TODO: split out the response yielding from rendering the response
     async def yield_response(
         self, message: telebot_types.Message, database: AsyncDatabase, logger: Logger
     ):
@@ -353,16 +379,7 @@ class Agent:
         chat_id = message.chat.id
         message_id = message.message_id
 
-        system_prompt, used_tokens = self.build_system_prompt(
-            message.chat, token_limit=self.max_tokens
-        )
-        agent_prompt, used_tokens = self.prompt_response(
-            token_limit=self.max_tokens - used_tokens
-        )
-        chat_log, _ = await self.build_chat_log(
-            database, message.chat, token_limit=self.max_tokens - used_tokens
-        )
-        prompt = f"{system_prompt}{chat_log}{agent_prompt}"
+        prompt = await self.build_prompt(message, database)
 
         logger.debug(
             f"Constructed prompt: {prompt}",
@@ -375,20 +392,13 @@ class Agent:
         compounded_result = ""
         stopped_reason = None
 
-        logger.debug("Completing on prompt", chat_id=chat_id, message_id=message_id)
-
         while tries < self.max_tries:
-            logger.debug(
-                f"Completion attempt: {tries}", chat_id=chat_id, message_id=message_id
-            )
-
             logger.debug(
                 f"Compounded result: {compounded_result}",
                 chat_id=chat_id,
                 message_id=message_id,
             )
 
-            # TODO: I really hope we don't break the token limit here -- add proper checks and verify!
             stopped, last_result = await self.complete(
                 prompt + compounded_result, chat_id
             )
@@ -401,9 +411,7 @@ class Agent:
             if "<function-call>" in last_result and fn_calls < MAX_FUNCTION_CALLS:
                 function_call_json_str = (
                     last_result.split("<function-call>")[1]
-                    .split(
-                        "<        Prompt the model to complete a chat messago        Prompt the model to complete a chat messago/function-call>"
-                    )[0]
+                    .split("</function-call>")[0]
                     .strip()
                     .replace("\n", "")
                 )
@@ -543,7 +551,6 @@ class Agent:
 
                 # Strip \n from the front and back of the result
                 clean_result = clean_result.strip("\n")
-                clean_result = clean_result.strip("\/n")
 
                 yield "success", clean_result
             else:
