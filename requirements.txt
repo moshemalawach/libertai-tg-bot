@@ -1,5 +1,6 @@
 SQLAlchemy
 aiosqlite
+ast
 alembic
 telebot
 python-dotenv
@@ -7,3 +8,8 @@ aiohttp
 requests
 wikipedia
 pyyaml
+
+langchain==0.1.9
+pydantic==2.6.2
+jsonschema==4.21.1
+yfinance==0.2.36

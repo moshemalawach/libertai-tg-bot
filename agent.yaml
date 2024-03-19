@@ -3,7 +3,8 @@ model:
   # Model Name
   name: 'OpenHermes 2.5 (7B)'
   # Model API URL
-  api_url: 'https://curated.aleph.cloud/vm/a8b6d895cfe757d4bc5db9ba30675b5031fe3189a99a14f13d5210c473220caf/completion'
+  # TODO: replace with production server
+  api_url: 'http://46.255.204.205:4910/completion'
   # Engine type to use. Supported engines: 'llamacpp', 'kobold', 'openai'
   engine: 'llamacpp'
   pass_credentials: true
@@ -28,10 +29,14 @@ persona:
     # Template for describing a group chat -- how to describe a chat to the model
     # {chat_title} | {chat_description} | {chat_members}
     group_chat: ./templates/group_chat.txt
+    # TODO: Split out into ROLE and OBJECTIVE
     # Template for persona prompt to the model -- we also include critical information about how to call functions here by default
-    # {persona_name} | {functions} | {max_functions_calls}
+    # {persona_name}
     # Note: in order for functions to work, you need to instruct the model within the persona prompt. We do by default.
     persona: ./templates/persona.txt
+    # Template for describing tools to the model -- which tools are available and how to use them
+    # {tools} | {max_iter} | {schema}
+    tools: ./templates/tools.txt
     # Portential reward message for the model -- how to reward the model
     # N/A (no templating)
     reward: ./templates/reward.txt
@@ -54,4 +59,3 @@ chat_ml:
     - '<|endoftext|>'
     - '</assistant'
     - '</user'
-  line_separator: '\n'

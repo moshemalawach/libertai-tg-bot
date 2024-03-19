@@ -6,7 +6,7 @@ import aiohttp
 
 from telebot import types as telebot_types
 
-from functions import functions as llm_functions
+from .tools import Executor as ToolExecutor, tools_json_schema
 from .utils import (
     calculate_number_of_tokens,
     fmt_msg_user_name,
@@ -21,15 +21,14 @@ from logger import Logger
 
 # CONSTANTS
 
-LLM_FUNCTIONS_DESCRIPTION = "\n".join(
-    [introspect_function(name, f) for name, f in llm_functions.items()]
-)
-MAX_FUNCTION_CALLS = 3
-BOT_NOTE = """{"note": "note message"}"""
+# TODO: implement a semantically stronger concept of Agent recursion
+MAX_MODEL_CALL_DEPTH = 5
 
 
 # TODO: unclear separation of concerns -- I would really like to find a better way
 #  to isolate Chat Histroy from prompt building
+# TODO: unclear separation of concerns -- I would really like to find a better way
+#  to isolate ChatML prompting from inference
 class Agent:
     """
     A Chat Bot that generates informed prompts based on the current conversation history.
@@ -56,7 +55,7 @@ class Agent:
         self.user_prepend = agent_config["chat_ml"]["user_prepend"]
         self.user_append = agent_config["chat_ml"]["user_append"]
         self.stop_sequences = agent_config["chat_ml"]["stop_sequences"]
-        self.line_separator = agent_config["chat_ml"]["line_separator"]
+        self.line_separator = '\n'
 
         # Persona Configuration and Templates
         # TODO: better configuration handling for this
@@ -64,8 +63,11 @@ class Agent:
         self.persona_name = "chat-bot"
         with open(agent_config["persona"]["templates"]["persona"], "r") as f:
             self.persona_template = f.read()
-        with open(agent_config["persona"]["templates"]["example"], "r") as f:
-            self.example = f.read()
+        with open(agent_config["persona"]["templates"]["tools"], "r") as f:
+            self.tools_template = f.read()
+        # TODO: re-enable examples
+        # with open(agent_config["persona"]["templates"]["example"], "r") as f:
+        #    self.example = f.read()
         with open(agent_config["persona"]["templates"]["reward"], "r") as f:
             self.reward = f.read()
         with open(agent_config["persona"]["templates"]["punishment"], "r") as f:
@@ -73,6 +75,9 @@ class Agent:
 
         # Initialize an empty Map to track open context slots on the server
         self.model_chat_slots = {}
+
+        # Initialize the Tool Executor
+        self.tool_executor = ToolExecutor()
 
     def set_persona_name(self, name: str):
         """
@@ -232,10 +237,12 @@ class Agent:
         # Our SYSTEM prompt consists of:
 
         # A persona
-        persona = (
-            self.persona_template.replace("{persona_name}", self.persona_name)
-            .replace("{functions}", LLM_FUNCTIONS_DESCRIPTION)
-            .replace("{max_function_calls}", str(MAX_FUNCTION_CALLS))
+        persona = self.persona_template.replace("{persona_name}", self.persona_name)
+
+        tools = (
+            self.tools_template.replace("{tools}", json.dumps(self.tool_executor.tools))
+            .replace("{max_iterations}", str(MAX_MODEL_CALL_DEPTH))
+            .replace("{schema}", str(tools_json_schema))
         )
         # Chat details
         chat_details = fmt_chat_details(chat, line_separator=self.line_separator)
@@ -245,7 +252,7 @@ class Agent:
         punishment = self.punishment
 
         # Put it all together tied together with valid ChatML
-        system_prompt = f"{self.user_prepend}SYSTEM{self.line_separator}{persona}{'If you perform well, you will be rewarded. ' + reward + self.line_separator if reward else ''}{'Otherwise, you will be punished. ' + punishment + self.line_separator if punishment else ''}{self.example}{self.line_separator}{chat_details}{self.line_separator}{self.user_append}{self.line_separator}"
+        system_prompt = f"{self.user_prepend}SYSTEM{self.line_separator}{persona}{self.line_separator}{tools}{self.line_separator}{'If you perform well, you will be rewarded. ' + reward + self.line_separator if reward else ''}{'Otherwise, you will be punished. ' + punishment + self.line_separator if punishment else ''}{chat_details}{self.line_separator}{self.user_append}{self.line_separator}"
         # Update our used tokens count
         used_tokens = calculate_number_of_tokens(system_prompt)
 
@@ -388,7 +395,7 @@ class Agent:
         )
 
         tries = 0
-        fn_calls = 0
+        depth = 0
         compounded_result = ""
         stopped_reason = None
 
@@ -407,60 +414,32 @@ class Agent:
                 f"Last result: {last_result}", chat_id=chat_id, message_id=message_id
             )
 
-            # Try to extract a function call from the `last_result`
-            if "<function-call>" in last_result and fn_calls < MAX_FUNCTION_CALLS:
-                function_call_json_str = (
-                    last_result.split("<function-call>")[1]
-                    .split("</function-call>")[0]
-                    .strip()
-                    .replace("\n", "")
-                )
-                function_call = (
-                    f"<function-call>{function_call_json_str}</function-call>"
-                )
-
-                # Parse the function call
-                function_call_json = json.loads(function_call_json_str)
-                fn = llm_functions[function_call_json["name"]]
-
-                logger.info(
-                    f"Calling function `{function_call_json['name']}` with arguments `{function_call_json['args']}`",
-                    chat_id=chat_id,
-                    message_id=message_id,
-                )
-
-                yield (
-                    "update",
-                    f"Calling function `{function_call_json['name']}` with arguments `{function_call_json['args']}`",
-                )
-                # call the function with the arguments
-                function_result = None
+            if stopped and depth < MAX_MODEL_CALL_DEPTH:
+                tools_message = None
                 try:
-                    result = fn(**function_call_json["args"])
-                    function_result_json = {**function_call_json, "result": result}
-                    function_result = f"<function-result>{json.dumps(function_result_json)}</function-result>"
-                    # remove new lines from the result
-                    function_result = function_result.replace("\n", "")
-                    logger.info(
-                        f"Function `{function_call_json['name']}` returned `{function_result_json['result']}`",
+                    tools_message = self.tool_executor.handle_completion(last_result)
+                    logger.debug(
+                        f"Tools message: {tools_message}",
                         chat_id=chat_id,
                         message_id=message_id,
                     )
                 except Exception as e:
-                    function_error_json = {**function_call_json, "error": str(e)}
-                    function_error = f"<function-error>{json.dumps(function_error_json)}</function-error>"
-                    function_result = function_error.replace("\n", "")
                     logger.warn(
-                        f"Function `{function_call_json['name']}` raised an error: {str(e)}",
+                        "Error handling tools message: " + str(e),
                         chat_id=chat_id,
                         message_id=message_id,
                     )
                 finally:
-                    compounded_result = f"{compounded_result}{self.line_separator}{function_call}{self.line_separator}{function_result}"
-                    fn_calls += 1
-                    # Continue to the next iteration without incurring a 'try'
-                    continue
-            elif fn_calls >= MAX_FUNCTION_CALLS:
+                    compounded_result = (
+                        f"{compounded_result}{last_result}"
+                    )
+                    if tools_message is not None:
+                        depth += 1
+                        tools_messages = f"{self.user_prepend}tool{self.line_separator}{tools_message}{self.user_append}{self.line_separator}"
+                        compounded_result = f"{compounded_result}{self.line_separator}{tools_messages}{self.line_separator}{self.user_prepend}{self.persona_name}{self.line_separator}"
+                        stopped = False
+                        continue
+            elif depth >= MAX_MODEL_CALL_DEPTH:
                 logger.warn(
                     "Function call depth exceeded",
                     chat_id=chat_id,
@@ -471,30 +450,16 @@ class Agent:
                     "I'm sorry, I've exceeded my function call depth. Please try again.",
                 )
                 return
-            elif "<function-result>" in last_result:
-                function_result_json_str = (
-                    last_result.split("<function-result>")[1]
-                    .split("</function-result>")[0]
-                    .strip()
-                    .replace("\n", "")
+            elif not stopped:
+                compounded_result = (
+                    f"{compounded_result}{last_result}"
                 )
-                function_result = (
-                    f"<function-result>{function_result_json_str}</function-result>"
-                )
-                last_result = f'{function_result}{self.line_separator}<function-note>{{"note": "You just fabricated a result. Please consider using a function call, instead of generating an uninformed result"}}</function-note>'
-                logger.warn(
-                    f"fabricated function result: {function_result_json_str}",
-                    chat_id=chat_id,
-                    message_id=message_id,
-                )
-                stopped = False
-                fn_calls += 1
-                continue
 
             # Note: assuming that the model searches for answers first, then generates a response
             # Ok we're done scraping function calls off the stack
             tries += 1
-            results = compounded_result + last_result
+
+            results = compounded_result
 
             for stop_seq in self.stop_sequences:
                 results = "|||||".join(results.split(f"\n{stop_seq}"))
@@ -502,7 +467,10 @@ class Agent:
 
             results = results.split("|||||")
 
-            results = results[0].rstrip()
+            results = results[-1].rstrip()
+            # Super janky way to determine if we need to strip the user prepend
+            if f"{self.user_prepend}{self.persona_name}" in results:
+                results = results.split(f"{self.user_prepend}{self.persona_name}{self.line_separator}")[-1]
             compounded_result = results
             logger.debug(
                 f"Final result: {compounded_result}",
@@ -539,20 +507,8 @@ class Agent:
                     "I'm sorry, I'm having trouble coming up with a concise response. Please try again.",
                 )
             if compounded_result != "":
-                # Clean the final result of any function calls, notes, etc
-                tags = [
-                    "function-call",
-                    "function-result",
-                    "function-error",
-                    "function-note",
-                ]
-                pattern = r"<(" + "|".join(tags) + r")>.*?<\/\1>"
-                clean_result = re.sub(pattern, "", compounded_result)
-
-                # Strip \n from the front and back of the result
-                clean_result = clean_result.strip("\n")
-
-                yield "success", clean_result
+                # TODO: Cleanup
+                yield "success", compounded_result
             else:
                 logger.warn(
                     "Failed to generate a response",
