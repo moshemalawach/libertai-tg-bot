@@ -1,8 +1,5 @@
-from .executor import Executor
 from .schema import FunctionCall
+from .functions import get_tools
+from .executor import ToolExecutor
 
-import json
-
-tools_json_schema = json.loads(FunctionCall.schema_json())
-
-__all__ = ['Executor', 'tools_json_schema']
+__all__ = ["get_tools", "FunctionCall", "ToolExecutor"]

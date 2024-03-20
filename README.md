@@ -9,6 +9,7 @@ information.
 It utilizes [Libertai's decentralized LLM API](https://libertai.io/apis/text-generation/) for generating context-aware responses to user queries.
 
 ## Requirements
+
 - Python3 + Pip + virtualenv
 
 ## Setup
@@ -78,7 +79,7 @@ If you would like to run the bot please ensure you use the virtual environment c
 
 ```
 source venv/bin/activate
-python3 src/app.py
+python3 src/bot.py
 ```
 
 ## Usage

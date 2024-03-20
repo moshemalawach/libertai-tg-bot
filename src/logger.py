@@ -1,15 +1,12 @@
 import logging
+import os
 
-# Define the logger
-LOGGER_NAME = __name__
-
-# TODO: Replace with a more observable solution that utilizes proper tracing and spans
-# TODO: Figure out a solution that lets me utilize different logging formats in different contexts
+from telebot import types as telebot_types
 
 
-# Custom Chat Log Formatter
+# Log Formatter
 # Used to trace events that span the handling of a message within a chat
-class ChatLogFormatter(logging.Formatter):
+class LogFormatter(logging.Formatter):
     def format(self, record):
         if hasattr(record, "chat_id"):
             record.chat_id = record.chat_id
@@ -39,22 +36,25 @@ class Logger:
         # Create the logger
         logger = logging.getLogger(__name__)
         # Set the log formatter
-        formatter = ChatLogFormatter(
+        formatter = LogFormatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(chat_id)s - %(message_id)s - %(message)s"
         )
 
         # Set our debug mode
         if debug:
             logging.basicConfig(level=logging.DEBUG)
-            # Hide asyncio logs
-            logging.getLogger('asyncio').setLevel(logging.WARNING)
-            # Hide aiosqlite logs
-            logging.getLogger('aiosqlite').setLevel(logging.WARNING)
+            # Hide debug logs from other libraries
+            logging.getLogger("asyncio").setLevel(logging.WARNING)
+            logging.getLogger("aiosqlite").setLevel(logging.WARNING)
         else:
             logging.basicConfig(level=logging.INFO)
 
         # Set where to send logs
         if log_path is not None and log_path.strip() != "":
+            # Create parent directories if they don't exist
+            log_path = log_path.strip()
+            log_dir = os.path.dirname(log_path)
+            os.makedirs(log_dir, exist_ok=True)
             handler = logging.FileHandler(log_path)
             handler.setFormatter(formatter)
         else:
@@ -66,6 +66,9 @@ class Logger:
         logger.addHandler(handler)
 
         self.logger = logger
+
+    def get_span(self, message: telebot_types.Message):
+        return MessageSpan(self, message.chat.id, message.message_id)
 
     def warn(self, message, chat_id=None, message_id=None):
         extra = {}
@@ -101,3 +104,22 @@ class Logger:
             extras["message_id"] = message_id
 
         self.logger.error(message, extra=extras)
+
+
+class MessageSpan:
+    def __init__(self, logger, chat_id, message_id):
+        self.logger = logger
+        self.chat_id = chat_id
+        self.message_id = message_id
+
+    def warn(self, message):
+        self.logger.warn(message, chat_id=self.chat_id, message_id=self.message_id)
+
+    def debug(self, message):
+        self.logger.debug(message, chat_id=self.chat_id, message_id=self.message_id)
+
+    def info(self, message):
+        self.logger.info(message, chat_id=self.chat_id, message_id=self.message_id)
+
+    def error(self, message):
+        self.logger.error(message, chat_id=self.chat_id, message_id=self.message_id)

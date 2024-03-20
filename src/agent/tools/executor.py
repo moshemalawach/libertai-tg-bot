@@ -1,15 +1,23 @@
 import os
-
 from os import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '.'))
+
+from .validator import (
+    validate_function_call_schema,
+)
+from .utils import (
+    validate_and_extract_tool_calls,
+)
+from .functions import (
+    get_tools,
+)
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 import functions
-from validator import validate_function_call_schema
-from utils import validate_and_extract_tool_calls
 
 
-class Executor:
+class ToolExecutor:
     def __init__(self):
-        self.tools = functions.get_tools()
+        self.tools = get_tools()
 
     def process_completion_and_validate(self, completion):
         validation, tool_calls, error_message = validate_and_extract_tool_calls(
@@ -27,7 +35,6 @@ class Executor:
         function_to_call = getattr(functions, function_name, None)
         function_args = tool_call.get("arguments", {})
 
-        # NOTE: this should be handled in the validator, but just in case
         if not function_to_call:
             raise ValueError(f"Function {function_name} not found")
 
@@ -35,34 +42,39 @@ class Executor:
         results_dict = f'{{"name": "{function_name}", "content": {function_response}}}'
         return results_dict
 
-    def handle_completion(self, completion):
-        print("Handling completion: ", completion)
+    def handle_completion(
+        self, completion: str, depth: int, span, line_separator="\n"
+    ) -> str | None:
         try:
-            # NOTE: this used to build up the prompt with recursive calls. For now we'll move that logic to the main agent class
-            # def recursive_loop(prompt, completion, depth):
-            # nonlocal max_depth
             tool_calls, error_message = self.process_completion_and_validate(completion)
-            print("Tool calls: ", tool_calls)
-            print("Error message: ", error_message)
-            tool_message = ""
+            tool_message = "Current call depth: " + str(depth) + line_separator
             if tool_calls:
                 for tool_call in tool_calls:
                     validation, message = validate_function_call_schema(
                         tool_call, self.tools
                     )
                     if validation:
+                        span.info(f"Function call {tool_call.get('name')} is valid")
                         try:
                             function_response = self.execute_function_call(tool_call)
-                            tool_message += f"<tool_response>\n{function_response}\n</tool_response>\n"
+                            tool_message += f"<tool_response>{line_separator}{function_response}{line_separator}</tool_response>{line_separator}"
+                            span.info(
+                                f"Function call {tool_call.get('name')} executed successfully with response: {function_response}"
+                            )
                         except Exception as e:
+                            span.error(
+                                f"Error executing function call {tool_call.get('name')}: {e}"
+                            )
                             tool_name = tool_call.get("name")
-                            tool_message += f"<tool_response>\nThere was an error when executing the function: {tool_name}\nHere's the error traceback: {e}\nPlease call this function again with correct arguments within XML tags <tool_call></tool_call>\n</tool_response>\n"
+                            tool_message += f"<tool_response>{line_separator}There was an error when executing the function: {tool_name}{line_separator}Here's the error traceback: {e}{line_separator}Please call this function again with correct arguments within XML tags <tool_call></tool_call>{line_separator}</tool_response>{line_separator}"
                     else:
+                        span.warn(f"Function call {tool_call.get('name')} is invalid")
                         tool_name = tool_call.get("name")
-                        tool_message += f"<tool_response>\nThere was an error validating function call against function signature: {tool_name}\nHere's the error traceback: {message}\nPlease call this function again with correct arguments within XML tags <tool_call></tool_call>\n</tool_response>\n"
+                        tool_message += f"<tool_response>{line_separator}There was an error validating function call against function signature: {tool_name}{line_separator}Here's the error traceback: {message}{line_separator}Please call this function again with correct arguments within XML tags <tool_call></tool_call>{line_separator}</tool_response>{line_separator}"
                 return tool_message
             elif error_message:
-                tool_message += f"<tool_response>\nThere was an error parsing function calls\n Here's the error stack trace: {error_message}\nPlease call the function again with correct syntax<tool_response>"
+                span.error(f"Error parsing function calls: {error_message}")
+                tool_message += f"<tool_response>{line_separator}There was an error parsing function calls{line_separator}Here's the error stack trace: {error_message}{line_separator}Please call the function again with correct syntax within XML tags <tool_call></tool_call>{line_separator}</tool_response>{line_separator}"
                 return tool_message
             return None
         except Exception as e:

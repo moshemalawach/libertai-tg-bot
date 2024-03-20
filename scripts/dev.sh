@@ -6,7 +6,7 @@ source .env
 export DATABASE_PATH=:memory:
 export DEBUG=True
 export LOG_PATH=
-python3 src/app.py
+python3 src/bot.py
 
 # Deactivate the virtual environment
 deactivate

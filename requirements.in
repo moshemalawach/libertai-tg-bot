@@ -1,0 +1,12 @@
+SQLAlchemy
+aiosqlite
+alembic
+telebot
+python-dotenv
+aiohttp
+requests
+pyyaml
+langchain
+pydantic
+jsonschema
+yfinance
