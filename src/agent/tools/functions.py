@@ -1,5 +1,4 @@
 import re
-import ast
 import requests
 import yfinance as yf
 import concurrent.futures
@@ -16,13 +15,15 @@ def google_search_and_scrape(query: str) -> dict:
     """
     Performs a Google search for the given query, retrieves the top search result URLs,
     and scrapes the text content and table data from those pages in parallel.
+    Truncates search results to the first 500 characters.
+    Use only for VITAL searches, as this function is expensive.
 
     Args:
         query (str): The search query.
     Returns:
         list: A list of dictionaries containing the URL, text content, and table data for each scraped page.
     """
-    num_results = 2
+    num_results = 1
     url = "https://www.google.com/search"
     params = {"q": query, "num": num_results}
     headers = {
@@ -65,6 +66,11 @@ def google_search_and_scrape(query: str) -> dict:
                 for row in table.find_all("tr")
             ]
             if text_content or table_data:
+                text_content = (
+                    text_content[:500] + "..."
+                    if len(text_content) > 500
+                    else text_content
+                )
                 results.append(
                     {"url": url, "content": text_content, "tables": table_data}
                 )

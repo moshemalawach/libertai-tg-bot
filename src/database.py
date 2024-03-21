@@ -16,8 +16,6 @@ from telebot import types as telebot_types
 import datetime
 import asyncio
 
-from logger import MessageSpan
-
 Base = declarative_base()
 
 # NOTE: it is generally a good idea to make your database schema match your domain model
@@ -90,7 +88,7 @@ class AsyncDatabase:
         message: telebot_types.Message,
         use_edit_date=False,
         reply_to_message_id=None,
-        span: MessageSpan | None = None,
+        span=None,
     ):
         """
         Add a message to the database
@@ -142,9 +140,7 @@ class AsyncDatabase:
                     )
                 raise e
 
-    async def get_chat_last_messages(
-        self, chat_id, limit=10, offset=0, span: MessageSpan | None = None
-    ):
+    async def get_chat_last_messages(self, chat_id, limit=10, offset=0, span=None):
         """
         Get the last messages in a chat in batches
 
@@ -179,7 +175,7 @@ class AsyncDatabase:
                 )
             raise e
 
-    async def clear_chat_history(self, chat_id, span: MessageSpan | None = None):
+    async def clear_chat_history(self, chat_id, span=None):
         """
         Clear the chat history
 

@@ -11,6 +11,7 @@ from .functions import (
     get_tools,
 )
 
+# NOTE: the sys path append is necessary to import the functions module
 sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 import functions
 
@@ -54,7 +55,9 @@ class ToolExecutor:
                         tool_call, self.tools
                     )
                     if validation:
-                        span.info(f"Function call {tool_call.get('name')} is valid")
+                        span.info(
+                            f"Function call {tool_call.get('name')} is valid | arguments: {tool_call.get('arguments')}"
+                        )
                         try:
                             function_response = self.execute_function_call(tool_call)
                             tool_message += f"<tool_response>{line_separator}{function_response}{line_separator}</tool_response>{line_separator}"

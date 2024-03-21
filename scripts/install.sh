@@ -12,8 +12,8 @@ source venv/bin/activate
 pip install pip-tools
 pip-compile requirements.in -o requirements.txt
 pip install -r requirements.txt
+python -m nltk.downloader punkt
 
 deactivate
 
 exit 0
-

@@ -10,3 +10,4 @@ langchain
 pydantic
 jsonschema
 yfinance
+nltk

@@ -118,7 +118,9 @@ class PromptManager:
 
         used_tokens = calculate_number_of_tokens(prompt)
 
-        if used_tokens > token_limit:
+        if token_limit == -1:
+            return prompt, used_tokens
+        elif used_tokens > token_limit:
             raise Exception("prompt_response(): prompt exceeds token limit")
 
         return prompt, used_tokens

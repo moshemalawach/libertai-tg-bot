@@ -32,6 +32,8 @@ certifi==2024.2.2
     # via requests
 charset-normalizer==3.3.2
     # via requests
+click==8.1.7
+    # via nltk
 dataclasses-json==0.6.4
     # via
     #   langchain
@@ -51,6 +53,8 @@ idna==3.6
     #   anyio
     #   requests
     #   yarl
+joblib==1.3.2
+    # via nltk
 jsonpatch==1.33
     # via
     #   langchain
@@ -90,6 +94,8 @@ multitasking==0.0.11
     # via yfinance
 mypy-extensions==1.0.0
     # via typing-inspect
+nltk==3.8.1
+    # via -r requirements.in
 numpy==1.26.4
     # via
     #   langchain
@@ -134,6 +140,8 @@ referencing==0.34.0
     # via
     #   jsonschema
     #   jsonschema-specifications
+regex==2023.12.25
+    # via nltk
 requests==2.31.0
     # via
     #   -r requirements.in
@@ -169,6 +177,8 @@ tenacity==8.2.3
     #   langchain
     #   langchain-community
     #   langchain-core
+tqdm==4.66.2
+    # via nltk
 typing-extensions==4.10.0
     # via
     #   aiosqlite

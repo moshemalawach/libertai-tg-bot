@@ -239,9 +239,9 @@ class Agent:
                         if stopped:
                             return compounded_result, token_count
                         # Otherwise, check if we've exceeded the token limit, and return if so
-                        if token_count > self.max_completion_tokens:
+                        elif token_count > self.max_completion_tokens:
                             span.warn("Agent::complete(): Exceeded token limit")
-                            return compounded_result, token_count
+                        return compounded_result, token_count
                     else:
                         raise Exception(
                             f"Agent::complete(): Non 200 status code: {response.status}"
@@ -333,8 +333,9 @@ class Agent:
                     recursive_tokens += calculate_number_of_tokens(tool_message)
 
                     # TODO: I should probably check that the token limit isn't exceeded here
+                    # For now, just let it go through no matter how big the recursion gets
                     prompt, _ = self.prompt_manager.prompt_response(
-                        f"{prompt}{completion}{tool_message}"
+                        f"{prompt}{completion}{tool_message}", token_limit=-1
                     )
 
                     span.debug(

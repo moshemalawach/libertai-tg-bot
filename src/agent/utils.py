@@ -1,6 +1,5 @@
-import inspect
-import json
 import sys
+import nltk
 
 from telebot import types as telebot_types
 
@@ -12,9 +11,8 @@ def calculate_number_of_tokens(line: str):
     """
     Determine the token length of a line of text
     """
-
-    f = len(line) / 2.7
-    return int(f)
+    tokens = nltk.word_tokenize(line)
+    return len(tokens)
 
 
 def fmt_chat_details(chat: telebot_types.Chat, line_separator="\n"):
