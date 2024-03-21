@@ -29,15 +29,25 @@ attrs==23.2.0
 beautifulsoup4==4.12.3
     # via yfinance
 certifi==2024.2.2
-    # via requests
+    # via
+    #   curl-cffi
+    #   requests
+cffi==1.16.0
+    # via curl-cffi
 charset-normalizer==3.3.2
     # via requests
 click==8.1.7
-    # via nltk
+    # via
+    #   duckduckgo-search
+    #   nltk
+curl-cffi==0.6.2
+    # via duckduckgo-search
 dataclasses-json==0.6.4
     # via
     #   langchain
     #   langchain-community
+duckduckgo-search==5.1.0
+    # via -r requirements.in
 frozendict==2.4.0
     # via yfinance
 frozenlist==1.4.1
@@ -79,7 +89,9 @@ langsmith==0.1.31
     #   langchain-community
     #   langchain-core
 lxml==5.1.0
-    # via yfinance
+    # via
+    #   duckduckgo-search
+    #   yfinance
 mako==1.3.2
     # via alembic
 markupsafe==2.1.5
@@ -112,6 +124,8 @@ pandas==2.2.1
     # via yfinance
 peewee==3.17.1
     # via yfinance
+pycparser==2.21
+    # via cffi
 pydantic==2.6.2
     # via
     #   -r requirements.in
