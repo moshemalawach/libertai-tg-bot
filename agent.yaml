@@ -1,57 +1,35 @@
-# Default Model Configuration
+# Everything having to LLM resources and parameterizing same
 model:
-  # Model Name
-  name: 'OpenHermes 2.5 (7B)'
-  # Model API URL
-  api_url: 'https://curated.aleph.cloud/vm/a8b6d895cfe757d4bc5db9ba30675b5031fe3189a99a14f13d5210c473220caf/completion'
-  # Engine type to use. Supported engines: 'llamacpp', 'kobold', 'openai'
-  engine: 'llamacpp'
-  pass_credentials: true
-  # Max response length
-  max_length: 200
-  # Max number of tries to get a response
-  max_tries: 3
-  # Max number of tokens to generate we can use
-  max_tokens: 16384
+  name: "Nouse-Hermes-2-Pro"
+  api_url: "https://altostratus.everythingwilldecentrali.se/vm/5e413862959ee4e48dda56f9efa0f128e93fb7b0dd6ce660f89172c6f2c96b88/completion"
+  engine: "llamacpp"
+
+  # Max Token count of prompts
+  max_prompt_tokens: 16384
+  # Max Token count of completions
+  max_completion_tokens: 250
+
+  # Model parameterizing
   temperature: 0.7
   sampler_order: [6, 0, 1, 3, 4, 2, 5]
   top_p: 0.9
   top_k: 40
-  model_type: 'knowledge'
-# Persona Configuration
-persona:
-  # We base how we build prompts off of templates
-  templates:
-    # Template for describing a private chat -- how to describe a user to the model
-    # {user_username} | {user_first_name} | {user_last_name} | {user_bio}
-    private_chat: ./templates/private_chat.txt
-    # Template for describing a group chat -- how to describe a chat to the model
-    # {chat_title} | {chat_description} | {chat_members}
-    group_chat: ./templates/group_chat.txt
-    # Template for persona prompt to the model -- we also include critical information about how to call functions here by default
-    # {persona_name} | {functions} | {max_functions_calls}
-    # Note: in order for functions to work, you need to instruct the model within the persona prompt. We do by default.
-    persona: ./templates/persona.txt
-    # Portential reward message for the model -- how to reward the model
-    # N/A (no templating)
-    reward: ./templates/reward.txt
-    # Potential punishment message for the model -- how to punish the model
-    # N/A ( no templating)
-    punishment: ./templates/punishment.txt
-    # Example of a message that can be sent to the model
-    # N/A (no templating)
-    # Note: in order for functions to work, it is best to provide a proper example of a calling a tool, with examples of handling results, errors, and exceptions.
-    example: ./templates/example.txt
-# We build prompts off of templates and split up prompts with ChatML
+
+# Agent prompt configuration
+agent:
+  # Max number of attempts to complete on a prompt
+  max_completion_tries: 3
+  # Max number of times the agent can call back to itself
+  max_self_recurse_depth: 5
+  # System Prompt Template. See the default template for further info
+  system_prompt_template: "./templates/system.yaml"
+
+# ChatML configuration
 chat_ml:
-  # The user prepend and append are used to wrap the user's input
-  user_prepend: '<|im_start|>'
-  user_append: '<|im_end|>'
-  # The stop sequences are used to stop the model from generating more text
+  user_prepend: "<|im_start|>"
+  user_append: "<|im_end|>"
   stop_sequences:
-    # Covers our configured bot name
-    - '<|im_end|>'
-    - '<|endoftext|>'
-    - '</assistant'
-    - '</user'
-  line_separator: '\n'
+    - "<|im_end|>"
+    - "<|endoftext|>"
+    - "</assistant"
+    - "</user"

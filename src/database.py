@@ -18,6 +18,9 @@ import asyncio
 
 Base = declarative_base()
 
+# NOTE: it is generally a good idea to make your database schema match your domain model
+# At the moment all of our fields are the same, allowing us to interchange telebot types with our database types
+
 
 class User(Base):
     __tablename__ = "users"
@@ -79,71 +82,114 @@ class AsyncDatabase:
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
+    # TODO: do we need the reply_to_message_id?
     async def add_message(
-        self, message: telebot_types.Message, edited=False, reply_to_message_id=None
+        self,
+        message: telebot_types.Message,
+        use_edit_date=False,
+        reply_to_message_id=None,
+        span=None,
     ):
+        """
+        Add a message to the database
+
+        message: The message to add
+        use_edit_date: Whether to use the edit date instead of the message date when the message is edited.
+        This is useful in the context of recording finalized responses from our bot
+        reply_to_message_id: The message ID this message is replying to. This is None in some cases, even when the message is a reply
+        span: The span to use for tracing. If None, no tracing is done
+        """
+
         async with self.AsyncSession() as session:
-            async with session.begin():
-                user = await session.execute(
-                    select(User).filter(User.username == message.from_user.username)
-                )
-                user = user.scalars().first()
-                if not user:
-                    user = User(
-                        id=message.from_user.id,
-                        username=message.from_user.username,
-                        first_name=message.from_user.first_name,
-                        last_name=message.from_user.last_name,
-                        language_code=message.from_user.language_code,
+            try:
+                async with session.begin():
+                    user = await session.execute(
+                        select(User).filter(User.username == message.from_user.username)
                     )
-                    session.add(user)
+                    user = user.scalars().first()
+                    if not user:
+                        user = User(
+                            id=message.from_user.id,
+                            username=message.from_user.username,
+                            first_name=message.from_user.first_name,
+                            last_name=message.from_user.last_name,
+                            language_code=message.from_user.language_code,
+                        )
+                        session.add(user)
 
-                reply_to_id = reply_to_message_id or (
-                    message.reply_to_message.message_id
-                    if message.reply_to_message
-                    else None
+                    reply_to_id = reply_to_message_id or (
+                        message.reply_to_message.message_id
+                        if message.reply_to_message
+                        else None
+                    )
+                    new_message = Message(
+                        id=message.message_id,
+                        chat_id=message.chat.id,
+                        from_user_id=user.id,
+                        reply_to_message_id=reply_to_id,
+                        text=message.text,
+                        timestamp=datetime.datetime.fromtimestamp(
+                            message.edit_date if use_edit_date else message.date
+                        ),
+                    )
+                    session.add(new_message)
+            except Exception as e:
+                if span:
+                    span.error(
+                        f"AsyncDatabase::add_message(): Error adding message: {e}"
+                    )
+                raise e
+
+    async def get_chat_last_messages(self, chat_id, limit=10, offset=0, span=None):
+        """
+        Get the last messages in a chat in batches
+
+        chat_id: The chat ID to get the messages from
+        limit: The maximum number of messages to get
+        offset: The number of messages to skip
+        span: The span to use for tracing. If None, no tracing is done
+        """
+        try:
+            async with self.AsyncSession() as session:
+                result = await session.execute(
+                    select(Message)
+                    .options(joinedload(Message.from_user))
+                    .options(
+                        joinedload(Message.reply_to_message).joinedload(
+                            Message.from_user
+                        )
+                    )
+                    .where(Message.chat_id == chat_id)
+                    .order_by(Message.timestamp.desc())
+                    .limit(limit)
+                    .offset(offset)
                 )
-                new_message = Message(
-                    id=message.message_id,
-                    chat_id=message.chat.id,
-                    from_user_id=user.id,
-                    reply_to_message_id=reply_to_id,
-                    text=message.text,
-                    timestamp=datetime.datetime.fromtimestamp(
-                        message.edit_date if edited else message.date
-                    ),
+
+                messages = result.scalars().all()
+
+                return messages
+        except Exception as e:
+            if span:
+                span.error(
+                    f"AsyncDatabase::get_chat_last_message(): Error getting chat last messages: {e}"
                 )
-                session.add(new_message)
+            raise e
 
-    async def update_message_text(self, message_id, new_text):
-        async with self.AsyncSession() as session:
-            async with session.begin():
-                db_message = await session.execute(
-                    select(Message).filter(Message.id == message_id)
+    async def clear_chat_history(self, chat_id, span=None):
+        """
+        Clear the chat history
+
+        chat_id: The chat ID to clear the history of
+        """
+        try:
+            async with self.AsyncSession() as session:
+                async with session.begin():
+                    await session.execute(
+                        delete(Message).where(Message.chat_id == chat_id)
+                    )
+        except Exception as e:
+            if span:
+                span.error(
+                    f"AysncDatabase::clear_chat_history(): Error clearing chat history: {e}"
                 )
-                db_message = db_message.scalars().first()
-                if db_message:
-                    db_message.text = new_text
-
-    async def get_chat_last_messages(self, chat_id, limit=10, offset=0):
-        async with self.AsyncSession() as session:
-            result = await session.execute(
-                select(Message)
-                .options(joinedload(Message.from_user))
-                .options(
-                    joinedload(Message.reply_to_message).joinedload(Message.from_user)
-                )
-                .where(Message.chat_id == chat_id)
-                .order_by(Message.timestamp.desc())
-                .limit(limit)
-                .offset(offset)
-            )
-
-            messages = result.scalars().all()
-
-            return messages
-
-    async def clear_chat_history(self, chat_id):
-        async with self.AsyncSession() as session:
-            async with session.begin():
-                await session.execute(delete(Message).where(Message.chat_id == chat_id))
+            raise e
