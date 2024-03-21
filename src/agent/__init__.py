@@ -1,4 +1,5 @@
 import aiohttp
+import time
 
 from telebot import types as telebot_types
 
@@ -40,6 +41,8 @@ class Agent:
         # Initialize the Prompt Manager
         self.prompt_manager = PromptManager(agent_config)
 
+    # State Helpers
+
     def name(self):
         """
         Return the name of the chat bot
@@ -69,6 +72,8 @@ class Agent:
             await session.close()
         self.model_chat_slots = {}
 
+    # Where the magic happens
+
     async def build_prompt(
         self,
         message: telebot_types.Message,
@@ -76,7 +81,7 @@ class Agent:
         span: MessageSpan,
         batch_size: int = 10,
         offset: int = 1,
-    ) -> str:
+    ) -> tuple[str, int]:
         """
         Build the most up to date prompt for the chat given the current conversation history.
         Max out at `token_limit` tokens.
@@ -104,7 +109,8 @@ class Agent:
         )
 
         # Now start filling in the chat log with as many tokens as we can
-        used_tokens += system_prompt_tokens + prompt_response_tokens
+        basic_prompt_tokens = system_prompt_tokens + prompt_response_tokens
+        used_tokens += basic_prompt_tokens
         chat_log_lines = []
         offset = 1
         done = False
@@ -146,17 +152,19 @@ class Agent:
             for line in reversed(chat_log_lines):
                 chat_log = f"{chat_log}{line}"
 
-            return f"{system_prompt}{chat_log}{prompt_response}"
+            return f"{system_prompt}{chat_log}{prompt_response}", used_tokens
         except Exception as e:
             # Log the error, but return the portion of the prompt we've built so far
             span.warn(
                 f"Agent::build_prompt(): error building prompt: {str(e)}. Returning partial prompt."
             )
-            return f"{system_prompt}{prompt_response}"
+            return f"{system_prompt}{prompt_response}", basic_prompt_tokens
 
-    async def complete(self, prompt: str, chat_id: int, span: MessageSpan) -> str:
+    async def complete(
+        self, prompt: str, chat_id: int, span: MessageSpan
+    ) -> tuple[str, int]:
         """
-        Complete on a prompt against our model within 3 tries.
+        Complete on a prompt against our model within a given number of tries.
 
         Returns a str containing the prompt's completion.
         """
@@ -226,16 +234,14 @@ class Agent:
                         )
                         last_result = response_data["content"]
                         compounded_result = f"{compounded_result}{last_result}"
+                        token_count = calculate_number_of_tokens(compounded_result)
                         # If we're stopped, return the compounded result
                         if stopped:
-                            return compounded_result
+                            return compounded_result, token_count
                         # Otherwise, check if we've exceeded the token limit, and return if so
-                        if (
-                            calculate_number_of_tokens(compounded_result)
-                            > self.max_completion_tokens
-                        ):
+                        if token_count > self.max_completion_tokens:
                             span.warn("Agent::complete(): Exceeded token limit")
-                            return compounded_result
+                            return compounded_result, token_count
                     else:
                         raise Exception(
                             f"Agent::complete(): Non 200 status code: {response.status}"
@@ -255,21 +261,32 @@ class Agent:
         """
         Yield a response from the agent given it's current state and the message it's responding to.
 
-        Yields a tuple of ('update' | 'success' | 'error', message)
+        Yield a string containing the response.
         """
+        start = time.time()
         span.info("Agent::yield_response()")
 
         chat_id = message.chat.id
         max_self_recurse_depth = self.max_self_recurse_depth
 
         # Build the prompt
-        prompt = await self.build_prompt(message, database, span)
+        prompt, used_tokens = await self.build_prompt(message, database, span)
+
+        span.info(f"Agent::yield_response(): prompt used tokens: {used_tokens}")
         span.debug("Agent::yield_response(): prompt built: " + prompt)
 
         try:
+            # Keep track of the tokens we've seen out of completion
+            completion_tokens = 0
+            # Keep track of the tokens we generate from the completion
+            recursive_tokens = 0
+            # Keep track of the depth of self recursion
             self_recurse_depth = 0
             while self_recurse_depth < max_self_recurse_depth:
-                completion = await self.complete(prompt, chat_id, span)
+                # Complete and determine the tokens used
+                completion, used_tokens = await self.complete(prompt, chat_id, span)
+                completion_tokens += used_tokens
+
                 span.debug("Agent::yield_response(): completion: " + completion)
 
                 tool_message = None
@@ -290,6 +307,15 @@ class Agent:
                 finally:
                     # If ther's nothing to do, return the completion
                     if tool_message is None:
+                        total_time = time.time() - start
+                        # Log
+                        # - completion tokens -- how many tokens the model generated
+                        # - recursive tokens -- how many tokens we generated due to recursion
+                        # - depth -- how deep we recursed
+                        # - time -- how long we spent
+                        span.info(
+                            f"Agent::yield_response(): completion tokens: {completion_tokens} | recursive_tokens: {recursive_tokens} | depth: {self_recurse_depth} | time: {total_time}"
+                        )
                         yield completion
                         return
 
@@ -303,6 +329,9 @@ class Agent:
 
                     # Build up the new prompt and recurse
                     tool_message = self.prompt_manager.tool_message(tool_message)
+                    # Keep track of the tokens we generate from the tool message
+                    recursive_tokens += calculate_number_of_tokens(tool_message)
+
                     # TODO: I should probably check that the token limit isn't exceeded here
                     prompt, _ = self.prompt_manager.prompt_response(
                         f"{prompt}{completion}{tool_message}"
