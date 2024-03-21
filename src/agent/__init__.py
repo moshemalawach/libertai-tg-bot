@@ -314,7 +314,7 @@ class Agent:
                         # - depth -- how deep we recursed
                         # - time -- how long we spent
                         span.info(
-                            f"Agent::yield_response(): completion tokens: {completion_tokens} | recursive_tokens: {recursive_tokens} | depth: {self_recurse_depth} | time: {total_time}"
+                            f"Agent::yield_response(): completion tokens: {completion_tokens} | recursive tokens: {recursive_tokens} | depth: {self_recurse_depth} | time: {total_time}"
                         )
                         yield completion
                         return
