@@ -138,8 +138,13 @@ class PromptManager:
 
         Returns a tuple of (system_prompt, used_tokens)
         """
+
+        # Format the date as a human readble string to give to the system
+        # Day of the week, Month Day, Year @ Hour:Minute:Second
+        # ex. "Monday, January 1, 2021 @ 12:00:00"
+        date = datetime.datetime.now().strftime("%A, %B %d, %Y @ %H:%M:%S")
         variables = {
-            "date": datetime.datetime.now().strftime("%Y-%m-%d"),
+            "date": date,
             "name": self.name,
             "chat_details": fmt_chat_details(chat),
             "tools": self.tools,

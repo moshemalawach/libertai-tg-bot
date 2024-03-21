@@ -44,24 +44,6 @@ def duckduckgo_search_answer(query: str) -> dict:
 
 
 @tool
-def duckduckgo_search_news(query: str) -> dict:
-    """
-    Search DuckDuckGo for the top news articles of a given query.
-    Use when trying to get the top news articles for a given topic.
-    Args:
-        query (str): The query to search for.
-    Returns:
-        dict: the top 5 news articles from DuckDuckGo. If an error occurs, an exception is returns within the "error" key.
-    """
-    try:
-        search = DDGS()
-        results = search.news(query, max_results=5)
-        return {"results": results}
-    except Exception as e:
-        return {"error": str(e)}
-
-
-@tool
 def get_current_stock_price(symbol: str) -> float | None:
     """
     Get the current stock price for a given symbol.
@@ -118,7 +100,6 @@ def get_tools() -> List[dict]:
     functions = [
         duckduckgo_search_text,
         duckduckgo_search_answer,
-        duckduckgo_search_news,
         get_current_stock_price,
         get_current_cryptocurrency_price_usd,
     ]
