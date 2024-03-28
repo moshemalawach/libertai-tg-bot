@@ -150,7 +150,7 @@ async def complete(prompt, model, stop_sequences, length=None, chat_id="0"):
             elif model['engine'] == "openai":
                 return_data = False, response_data.choices[0]['text']
             
-            SLOTS[chat_id] = session, response_data['slot_id']
+            SLOTS[chat_id] = session, slot_id
 
             return return_data
         else:
